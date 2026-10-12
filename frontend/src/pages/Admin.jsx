@@ -380,23 +380,87 @@ const LEAD_STATUS_STYLES = {
   closed: 'bg-stone-200 text-ink/60',
 };
 
+// Calendar days are plain 'YYYY-MM-DD' strings, compared in the viewer's local time.
+const pad = (n) => String(n).padStart(2, '0');
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const parseDay = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+// Fixed day-month-year order (e.g. 12 Nov 2026) so "11/12" can never be misread as either order.
+const fmtDay = (s) => parseDay(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const daysUntil = (s) => Math.round((parseDay(s) - parseDay(localToday())) / 86400000);
+const plural = (n) => `${n} day${n === 1 ? '' : 's'}`;
+
+// What the "Trial ends" column shows. Only provisioned workspaces have a running free month.
+function trialInfo(lead) {
+  if (lead.status !== 'provisioned') return null;
+  if (!lead.trial_ends_at) return { text: 'Set a start date', tone: 'amber' };
+  const n = daysUntil(lead.trial_ends_at);
+  if (n < 0) return { n, text: `Ended ${plural(-n)} ago`, tone: 'red' };
+  if (n === 0) return { n, text: 'Ends today', tone: 'red' };
+  return { n, text: `${plural(n)} left`, tone: n <= 7 ? 'amber' : 'green' };
+}
+const TONE_STYLES = {
+  red: 'bg-brick-50 text-brick-600',
+  amber: 'bg-amber-50 text-amber-600',
+  green: 'bg-patina-50 text-patina-600',
+};
+
+function TrialCell({ lead }) {
+  const info = trialInfo(lead);
+  if (!info) return <span className="text-ink/30">—</span>;
+  return (
+    <div>
+      {lead.trial_ends_at && <div className="text-sm text-ink">{fmtDay(lead.trial_ends_at)}</div>}
+      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TONE_STYLES[info.tone]}`}>{info.text}</span>
+    </div>
+  );
+}
+
 function LeadsPanel() {
   const [leads, setLeads] = useState([]);
   const load = useCallback(() => client.get('/leads').then((res) => setLeads(res.data)), []);
   useEffect(() => { load(); }, [load]);
 
-  async function updateStatus(id, status) {
-    await client.put(`/leads/${id}`, { status });
+  async function save(id, patch) {
+    await client.put(`/leads/${id}`, patch);
     load();
   }
+  // Setting "provisioned" starts the free month: today, unless a start date is already recorded.
+  function changeStatus(lead, status) {
+    const patch = { status };
+    if (status === 'provisioned' && !lead.provisioned_at) patch.provisioned_at = localToday();
+    save(lead.id, patch);
+  }
+  const startDate = (lead) =>
+    lead.status === 'provisioned' ? (
+      <label className="mt-1.5 flex items-center gap-1.5 text-xs text-ink/50">
+        Ready on
+        <Input
+          type="date"
+          value={lead.provisioned_at || ''}
+          onChange={(e) => e.target.value && save(lead.id, { provisioned_at: e.target.value })}
+          className="!w-auto py-1 text-xs"
+        />
+      </label>
+    ) : null;
+
+  // Ending within 7 days, already ended, or provisioned but missing a start date.
+  const needsAttention = leads.filter((l) => { const t = trialInfo(l); return t && (t.n === undefined || t.n <= 7); });
 
   return (
     <div>
       <p className="mb-4 text-sm text-ink/50">
         Trial requests submitted from the marketing site's{' '}
         <a href="/start" className="text-patina-500 hover:underline" target="_blank" rel="noreferrer">/start</a>{' '}
-        page. Each one needs a workspace set up by hand — update the status here as you work through the queue.
+        page. Each one needs a workspace set up by hand. Set the status to <strong>provisioned</strong> when it is ready —
+        that starts the free month and shows when it ends.
       </p>
+
+      {needsAttention.length > 0 && (
+        <div className="mb-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-600">
+          <span className="font-semibold">{needsAttention.length === 1 ? '1 trial needs' : `${needsAttention.length} trials need`} attention:</span>{' '}
+          {needsAttention.map((l) => `${l.company} (${trialInfo(l).text.toLowerCase()})`).join(', ')}
+        </div>
+      )}
 
       {leads.length === 0 ? (
         <Card className="p-8 text-center text-sm text-ink/40">No trial requests yet.</Card>
@@ -415,9 +479,13 @@ function LeadsPanel() {
                   {l.team_size && <span> · {l.team_size} agents</span>}
                   {l.region && <span> · {l.region}</span>}
                 </div>
-                <Select value={l.status} onChange={(e) => updateStatus(l.id, e.target.value)} className="!w-auto py-1 text-xs">
+                <Select value={l.status} onChange={(e) => changeStatus(l, e.target.value)} className="!w-auto py-1 text-xs">
                   {LEAD_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </Select>
+                {startDate(l)}
+                {l.status === 'provisioned' && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-ink/50">Trial ends <TrialCell lead={l} /></div>
+                )}
               </Card>
             ))}
           </div>
@@ -434,6 +502,7 @@ function LeadsPanel() {
                     <th className="px-4 py-3">Region</th>
                     <th className="px-4 py-3">Submitted</th>
                     <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Trial ends</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -447,12 +516,14 @@ function LeadsPanel() {
                       <td className="px-4 py-3 capitalize text-ink/70">{l.plan || '—'}</td>
                       <td className="px-4 py-3 text-ink/70">{l.team_size || '—'}</td>
                       <td className="px-4 py-3 capitalize text-ink/70">{l.region || '—'}</td>
-                      <td className="px-4 py-3 text-xs text-ink/50">{new Date(l.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 text-xs text-ink/50">{new Date(l.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                       <td className="px-4 py-3">
-                        <Select value={l.status} onChange={(e) => updateStatus(l.id, e.target.value)} className="!w-auto py-1">
+                        <Select value={l.status} onChange={(e) => changeStatus(l, e.target.value)} className="!w-auto py-1">
                           {LEAD_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </Select>
+                        {startDate(l)}
                       </td>
+                      <td className="px-4 py-3"><TrialCell lead={l} /></td>
                     </tr>
                   ))}
                 </tbody>

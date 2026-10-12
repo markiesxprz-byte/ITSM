@@ -43,3 +43,23 @@ export function fire(c, promise) {
   const p = Promise.resolve(promise).catch((e) => console.error('[background]', e?.message || e));
   try { c.executionCtx.waitUntil(p); } catch { /* no execution context (tests) */ }
 }
+
+// ---- Calendar dates as plain 'YYYY-MM-DD' strings (no time zones to get wrong) ----
+export const todayUtc = () => new Date().toISOString().slice(0, 10);
+
+export function isValidDay(str) {
+  if (typeof str !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const [y, m, d] = str.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d; // rejects 2026-02-30
+}
+
+// Add whole calendar months, clamping to the end of a shorter month:
+// 31 Jan + 1 month = 28 Feb (29 in a leap year), not 3 March.
+export function addMonths(str, n) {
+  const [y, m, d] = str.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + n, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return target.toISOString().slice(0, 10);
+}

@@ -59,7 +59,13 @@ export default function Pricing() {
           Requesters — the people raising tickets — are always free and unlimited. You only pay for agents working the queue.
         </p>
 
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-5">
+          <span className="inline-block rounded-full bg-patina-50 px-4 py-1.5 text-sm font-semibold text-patina-600">
+            Every plan is free for your first month
+          </span>
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
           <div className="inline-flex rounded-md bg-stone-100 p-1 text-sm">
             <button
               onClick={() => setAnnual(false)}
@@ -130,7 +136,7 @@ export default function Pricing() {
             </div>
           ))}
         </div>
-        <p className="mt-6 text-center text-xs text-ink/40">*Email-to-ticket is on the roadmap — see the trial signup for current status.</p>
+        <p className="mt-6 text-center text-xs text-ink/40">Prices apply after your free first month. *Email-to-ticket is on the roadmap — see the trial signup for current status.</p>
       </section>
 
       {/* Comparison table */}
@@ -167,7 +173,7 @@ export default function Pricing() {
       <section className="py-16">
         <div className="mx-auto max-w-2xl px-5 text-center">
           <h2 className="font-display text-2xl font-bold text-ink">Not sure which tier fits?</h2>
-          <p className="mt-3 text-ink/60">Start a free trial on any plan — we'll help you find the right fit once you're in.</p>
+          <p className="mt-3 text-ink/60">Your first month is free on any plan — we'll help you find the right fit once you're in.</p>
           <Link to="/start" className="mt-6 inline-block rounded-md bg-patina-500 px-6 py-3 text-sm font-semibold text-white hover:bg-patina-600">
             Start free trial
           </Link>

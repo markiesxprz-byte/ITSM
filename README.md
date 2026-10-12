@@ -80,6 +80,8 @@ and add `"vars": { "FROM_EMAIL": "no-reply@yourdomain" }` (a sender verified in 
 ## Marketing site and trial signups
 `/` landing page, `/pricing`, `/start` trial form. The app itself lives at `/login` and `/dashboard`.
 
+The offer is **one month free**, starting the day the workspace is ready; the Trial Leads list tracks it. Setting a lead to `provisioned` records the start date (today, or a date you pick under **Ready on**) and shows **when the month ends** with a days-left chip; leads ending within 7 days (or already ended) are called out in a banner. **Nothing sends reminders, bills, or switches a workspace off at the end of the month** — you follow up by hand.
+
 Submitting `/start` stores a row in the `leads` table and emails the submitter a confirmation. **Nothing is provisioned automatically.** Admins work the queue in **Administration → Trial Leads** (`new → contacted → provisioned → closed`) and stand up each customer's deployment by hand. Don't collect payment until that step is fast and reliable.
 
 ## API documentation

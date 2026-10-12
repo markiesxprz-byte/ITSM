@@ -11,7 +11,7 @@ const norm = (v) => {
 };
 const out = [];
 let n = 0;
-async function call(label, method, path, { token, json, raw } = {}) {
+async function call(label, method, path, { token, json, raw, quiet } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (json) headers['Content-Type'] = 'application/json';
@@ -22,7 +22,7 @@ async function call(label, method, path, { token, json, raw } = {}) {
   if (ct.includes('application/json')) { try { data = JSON.parse(text); } catch { data = text; } } else data = text;
   const line = { step: `${String(++n).padStart(3, '0')} ${label}`, status: res.status };
   if (raw) { line.type = ct.split(';')[0]; line.text = norm(text); }
-  else if (res.status !== 204) line.body = norm(typeof data === 'string' ? data.slice(0, 200) : data);
+  else if (res.status !== 204 && !quiet) line.body = norm(typeof data === 'string' ? data.slice(0, 200) : data);
   out.push(JSON.stringify(line));
   return data;
 }
@@ -181,5 +181,28 @@ await J('lead list requester forbidden', 'GET', '/api/leads', { token: ST });
 const leads = await J('lead list admin', 'GET', '/api/leads', { token: OT });
 await J('lead update', 'PUT', `/api/leads/${leads[0].id}`, { token: OT, json: { status: 'contacted', notes: 'called' } });
 await J('lead update 404', 'PUT', '/api/leads/nope', { token: OT, json: { status: 'x' } });
+
+// ---------- trial end dates (free month = 1 calendar month from the day the workspace is ready) ----------
+const L1 = `/api/leads/${leads[0].id}`;
+await J('lead update: invalid status rejected', 'PUT', L1, { token: OT, json: { status: 'banana' } });
+await J('lead update: requester forbidden', 'PUT', L1, { token: ST, json: { status: 'closed' } });
+const trial = async (label, json) => {
+  const r = await J(label, 'PUT', L1, { token: OT, json });
+  out.push(JSON.stringify({ step: `${label} => dates`, start: r.provisioned_at, ends: r.trial_ends_at }));
+};
+await trial('trial: provision with explicit start', { status: 'provisioned', provisioned_at: '2026-10-12' }); // 2026-11-12
+await trial('trial: 31 Jan clamps to 28 Feb', { provisioned_at: '2026-01-31' });
+await trial('trial: leap year 31 Jan -> 29 Feb', { provisioned_at: '2024-01-31' });
+await trial('trial: year rollover', { provisioned_at: '2026-12-15' });
+await J('trial: non-date text rejected', 'PUT', L1, { token: OT, json: { provisioned_at: 'not-a-date' } });
+await J('trial: impossible date rejected', 'PUT', L1, { token: OT, json: { provisioned_at: '2026-02-30' } });
+await J('trial: other status keeps the start date', 'PUT', L1, { token: OT, json: { status: 'closed' } });
+await J('lead public submit #2', 'POST', '/api/leads', { json: { name: 'Sam', email: 'sam@beta.co.za', company: 'Beta Co' } });
+const all2 = await J('lead list (two leads)', 'GET', '/api/leads', { token: OT });
+const second = all2.find((l) => l.company === 'Beta Co');
+const auto = await call('trial: provisioning with no date starts today', 'PUT', `/api/leads/${second.id}`, { token: OT, json: { status: 'provisioned' }, quiet: true });
+out.push(JSON.stringify({ step: 'trial: auto start is today (UTC) and ends a month later', ok: auto.provisioned_at === new Date().toISOString().slice(0, 10) && auto.trial_ends_at > auto.provisioned_at }));
+const notProv = await call('trial: not-provisioned lead has no end date', 'GET', '/api/leads?status=new', { token: OT, quiet: true });
+out.push(JSON.stringify({ step: 'trial: leads in status new', count: notProv.length }));
 
 console.log(out.join('\n'));

@@ -42,7 +42,7 @@ export default function Landing() {
               See pricing
             </Link>
           </div>
-          <p className="mt-4 text-xs text-ink/40">No credit card required to start.</p>
+          <p className="mt-4 text-sm text-ink/60"><span className="font-semibold text-patina-600">Free for your first month.</span> No credit card required.</p>
         </div>
         <div className="flex justify-center">
           <AscendingMotif className="w-full max-w-sm" />
@@ -95,7 +95,7 @@ export default function Landing() {
       <section className="bg-slate-850 py-16 text-white">
         <div className="mx-auto max-w-3xl px-5 text-center">
           <h2 className="font-display text-3xl font-bold">Get your service desk running this week.</h2>
-          <p className="mt-3 text-white/70">Tell us about your team and we'll get you into a trial workspace.</p>
+          <p className="mt-3 text-white/70">Tell us about your team and we'll set up your workspace. Your first month is free.</p>
           <Link
             to="/start"
             className="mt-8 inline-block rounded-md bg-amber-500 px-8 py-3 text-sm font-semibold text-ink hover:bg-amber-400"

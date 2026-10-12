@@ -50,7 +50,7 @@ export default function TrialSignup() {
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-patina-50 text-2xl text-patina-500">✓</div>
           <h1 className="font-display text-2xl font-bold text-ink">Request received</h1>
           <p className="mt-3 text-ink/60">
-            Thanks, {form.name.split(' ')[0] || 'there'} — we set up every trial workspace by hand so it's configured correctly from day one. You'll get an email at <span className="font-medium text-ink">{form.email}</span> with sign-in details within one business day.
+            Thanks, {form.name.split(' ')[0] || 'there'} — we set up every trial workspace by hand so it's configured correctly from day one. You'll get an email at <span className="font-medium text-ink">{form.email}</span> with sign-in details within one business day. Your free month starts the day your workspace is ready.
           </p>
           <Link to="/" className="mt-8 inline-block text-sm font-medium text-patina-500 hover:underline">← Back to home</Link>
         </section>
@@ -67,6 +67,10 @@ export default function TrialSignup() {
             Tell us about your team. Trial workspaces are set up by hand — usually within one business day — so nothing about your setup is a guess.
           </p>
           <div className="mt-8 space-y-4 text-sm text-ink/60">
+            <div className="flex gap-3">
+              <span className="text-patina-500">✓</span>
+              <span>Your first month is free — it starts the day your workspace is ready</span>
+            </div>
             <div className="flex gap-3">
               <span className="text-patina-500">✓</span>
               <span>No credit card required to start</span>
@@ -159,7 +163,7 @@ export default function TrialSignup() {
             disabled={submitting}
             className="w-full rounded-md bg-patina-500 px-4 py-3 text-sm font-semibold text-white hover:bg-patina-600 disabled:opacity-50"
           >
-            {submitting ? 'Submitting…' : 'Request trial access'}
+            {submitting ? 'Submitting…' : 'Request my free month'}
           </button>
           <p className="mt-3 text-center text-xs text-ink/40">
             Already have an account? <Link to="/login" className="text-patina-500 hover:underline">Sign in</Link>

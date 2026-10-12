@@ -120,6 +120,25 @@
 {"step":"119 lead missing fields","status":400,"body":{"error":"name, email and company are required"}}
 {"step":"120 lead list unauth","status":401,"body":{"error":"Authentication required"}}
 {"step":"121 lead list requester forbidden","status":403,"body":{"error":"Insufficient permissions"}}
-{"step":"122 lead list admin","status":200,"body":[{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":null,"plan":"growth","region":"south-africa","status":"new","team_size":"11-25","workspace_slug":"acme"}]}
-{"step":"123 lead update","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","region":"south-africa","status":"contacted","team_size":"11-25","workspace_slug":"acme"}}
+{"step":"122 lead list admin","status":200,"body":[{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":null,"plan":"growth","provisioned_at":null,"region":"south-africa","status":"new","team_size":"11-25","trial_ends_at":null,"workspace_slug":"acme"}]}
+{"step":"123 lead update","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":null,"region":"south-africa","status":"contacted","team_size":"11-25","trial_ends_at":null,"workspace_slug":"acme"}}
 {"step":"124 lead update 404","status":404,"body":{"error":"Not found"}}
+{"step":"125 lead update: invalid status rejected","status":400,"body":{"error":"status must be one of: new, contacted, provisioned, closed"}}
+{"step":"126 lead update: requester forbidden","status":403,"body":{"error":"Insufficient permissions"}}
+{"step":"127 trial: provision with explicit start","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":"2026-10-12","region":"south-africa","status":"provisioned","team_size":"11-25","trial_ends_at":"2026-11-12","workspace_slug":"acme"}}
+{"step":"trial: provision with explicit start => dates","start":"2026-10-12","ends":"2026-11-12"}
+{"step":"128 trial: 31 Jan clamps to 28 Feb","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":"2026-01-31","region":"south-africa","status":"provisioned","team_size":"11-25","trial_ends_at":"2026-02-28","workspace_slug":"acme"}}
+{"step":"trial: 31 Jan clamps to 28 Feb => dates","start":"2026-01-31","ends":"2026-02-28"}
+{"step":"129 trial: leap year 31 Jan -> 29 Feb","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":"2024-01-31","region":"south-africa","status":"provisioned","team_size":"11-25","trial_ends_at":"2024-02-29","workspace_slug":"acme"}}
+{"step":"trial: leap year 31 Jan -> 29 Feb => dates","start":"2024-01-31","ends":"2024-02-29"}
+{"step":"130 trial: year rollover","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":"2026-12-15","region":"south-africa","status":"provisioned","team_size":"11-25","trial_ends_at":"2027-01-15","workspace_slug":"acme"}}
+{"step":"trial: year rollover => dates","start":"2026-12-15","ends":"2027-01-15"}
+{"step":"131 trial: non-date text rejected","status":400,"body":{"error":"provisioned_at must be a real date in YYYY-MM-DD format"}}
+{"step":"132 trial: impossible date rejected","status":400,"body":{"error":"provisioned_at must be a real date in YYYY-MM-DD format"}}
+{"step":"133 trial: other status keeps the start date","status":200,"body":{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":"2026-12-15","region":"south-africa","status":"closed","team_size":"11-25","trial_ends_at":"2027-01-15","workspace_slug":"acme"}}
+{"step":"134 lead public submit #2","status":201,"body":{"received":true}}
+{"step":"135 lead list (two leads)","status":200,"body":[{"company":"Beta Co","created_at":"<ts>","email":"sam@beta.co.za","id":"<id>","name":"Sam","notes":null,"plan":null,"provisioned_at":null,"region":null,"status":"new","team_size":null,"trial_ends_at":null,"workspace_slug":null},{"company":"Acme","created_at":"<ts>","email":"jane@acme.co.za","id":"<id>","name":"Jane","notes":"called","plan":"growth","provisioned_at":"2026-12-15","region":"south-africa","status":"closed","team_size":"11-25","trial_ends_at":"2027-01-15","workspace_slug":"acme"}]}
+{"step":"136 trial: provisioning with no date starts today","status":200}
+{"step":"trial: auto start is today (UTC) and ends a month later","ok":true}
+{"step":"137 trial: not-provisioned lead has no end date","status":200}
+{"step":"trial: leads in status new","count":0}
