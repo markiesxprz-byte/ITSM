@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #F4F7FC;
+  color: #1B2333;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.15s ease;
+}
+
+html.dark body {
+  background-color: #10182E;
+  color: #E8EDFB;
+}
+
+:focus-visible {
+  outline: 2px solid #2C82E6;
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8E1F0;
+  border-radius: 6px;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #22305A;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ticket-plate {
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Dark mode overrides for the shared stone/ink palette used throughout the pages.
+   Centralizing these here means individual pages don't need per-element dark:
+   variants for every heading, table, and empty state. */
+html.dark .text-ink { color: #E8EDFB; }
+html.dark .text-ink\/80 { color: rgba(233, 231, 225, 0.8); }
+html.dark .text-ink\/70 { color: rgba(233, 231, 225, 0.7); }
+html.dark .text-ink\/60 { color: rgba(233, 231, 225, 0.6); }
+html.dark .text-ink\/50 { color: rgba(233, 231, 225, 0.5); }
+html.dark .text-ink\/40 { color: rgba(233, 231, 225, 0.4); }
+html.dark .text-ink\/30 { color: rgba(233, 231, 225, 0.3); }
+
+html.dark .bg-white { background-color: #141B33; }
+html.dark .bg-stone-50 { background-color: #141B33; }
+html.dark .bg-stone-100 { background-color: #1B2440; }
+html.dark .bg-stone-200 { background-color: #232F52; }
+
+html.dark .hover\:bg-stone-50:hover { background-color: #1B2440; }
+html.dark .hover\:bg-stone-100:hover { background-color: #232F52; }
+
+html.dark .border-stone-100 { border-color: rgba(255, 255, 255, 0.08); }
+html.dark .border-stone-200 { border-color: rgba(255, 255, 255, 0.12); }
+
+html.dark .hover\:border-patina-400:hover { border-color: #5AA0F0; }

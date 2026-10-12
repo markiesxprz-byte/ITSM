@@ -1,0 +1,19 @@
+{
+  "name": "infovantage-itsm",
+  "private": true,
+  "type": "module",
+  "description": "Infovantage ITSM — runs entirely on Cloudflare (Workers + D1 + static assets)",
+  "scripts": {
+    "build": "node cloudflare/scripts/build-web.mjs",
+    "dev": "npm run build && wrangler dev",
+    "dev:ui": "npm --prefix frontend run dev",
+    "test:api": "node cloudflare/scripts/test-api.mjs",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

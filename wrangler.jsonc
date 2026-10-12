@@ -1,0 +1,24 @@
+{
+  "name": "infovantage-itsm",
+  "main": "cloudflare/src/index.js",
+  "compatibility_date": "2025-06-01",
+
+  // The marketing site + React app. Served as static assets with SPA fallback.
+  // Only /api/* runs the Worker; everything else costs no Worker CPU.
+  "assets": {
+    "directory": "./cloudflare/public",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // No database_id on purpose: Cloudflare creates the database on first deploy.
+  // The Worker creates its own tables on first request (see cloudflare/src/lib/migrate.js).
+  "d1_databases": [
+    { "binding": "DB", "database_name": "infovantage-itsm" }
+  ],
+
+  // Lets the Worker import openapi.yaml and schema.sql as text.
+  "rules": [{ "type": "Text", "globs": ["**/*.yaml", "**/*.sql"], "fallthrough": true }],
+
+  "observability": { "enabled": true }
+}

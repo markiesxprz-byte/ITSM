@@ -1,0 +1,917 @@
+openapi: 3.0.3
+info:
+  title: Infovantage ITSM API
+  description: >
+    REST API for the Infovantage ITSM tool — incidents, service requests, problems,
+    changes, CMDB, knowledge base, SLA policies, and dashboard reporting.
+    All endpoints except /auth/register and /auth/login require a Bearer JWT
+    obtained from /auth/login.
+  version: "1.0.0"
+servers:
+  - url: /api
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Incidents
+  - name: Service Requests
+  - name: Problems
+  - name: Changes
+  - name: CMDB
+  - name: Knowledge Base
+  - name: SLA Policies
+  - name: Dashboard
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [admin, agent, requester] }
+        department: { type: string, nullable: true }
+        is_active: { type: integer, enum: [0, 1] }
+        created_at: { type: string, format: date-time }
+
+    Comment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticket_type: { type: string, enum: [incident, service_request, problem, change] }
+        ticket_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        content: { type: string }
+        is_internal: { type: integer, enum: [0, 1] }
+        created_at: { type: string, format: date-time }
+
+    Incident:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, example: INC0001 }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        category: { type: string }
+        priority: { type: string, enum: [P1, P2, P3, P4] }
+        status: { type: string, enum: [new, in_progress, on_hold, resolved, closed] }
+        impact: { type: string, enum: [low, medium, high] }
+        urgency: { type: string, enum: [low, medium, high] }
+        requester_id: { type: string, format: uuid, nullable: true }
+        assigned_to: { type: string, format: uuid, nullable: true }
+        ci_id: { type: string, format: uuid, nullable: true }
+        problem_id: { type: string, format: uuid, nullable: true }
+        sla_response_due: { type: string, format: date-time }
+        sla_resolution_due: { type: string, format: date-time }
+        responded_at: { type: string, format: date-time, nullable: true }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        closed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ServiceRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, example: SR0001 }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        catalog_item_id: { type: string, format: uuid, nullable: true }
+        priority: { type: string, enum: [P1, P2, P3, P4] }
+        status: { type: string, enum: [new, pending_approval, approved, in_progress, fulfilled, rejected, closed] }
+        approval_status: { type: string, enum: [not_required, pending, approved, rejected] }
+        requester_id: { type: string, format: uuid, nullable: true }
+        assigned_to: { type: string, format: uuid, nullable: true }
+        approver_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Problem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, example: PRB0001 }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [new, investigating, root_cause_identified, known_error, resolved, closed] }
+        priority: { type: string, enum: [P1, P2, P3, P4] }
+        root_cause: { type: string, nullable: true }
+        workaround: { type: string, nullable: true }
+        ci_id: { type: string, format: uuid, nullable: true }
+        assigned_to: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    Change:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, example: CHG0001 }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        change_type: { type: string, enum: [standard, normal, emergency] }
+        status: { type: string, enum: [draft, pending_approval, approved, scheduled, in_progress, completed, failed, rejected, closed] }
+        risk: { type: string, enum: [low, medium, high] }
+        implementation_plan: { type: string, nullable: true }
+        backout_plan: { type: string, nullable: true }
+        test_plan: { type: string, nullable: true }
+        scheduled_start: { type: string, format: date-time, nullable: true }
+        scheduled_end: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    CmdbItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        ci_type: { type: string, enum: [server, application, network_device, database, workstation, service] }
+        status: { type: string, enum: [active, retired, maintenance] }
+        environment: { type: string, enum: [production, staging, development] }
+        owner_id: { type: string, format: uuid, nullable: true }
+        description: { type: string, nullable: true }
+        ip_address: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+
+    KbArticle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        content: { type: string }
+        category: { type: string }
+        tags: { type: string, nullable: true }
+        status: { type: string, enum: [draft, published, archived] }
+        views: { type: integer }
+        helpful_count: { type: integer }
+        not_helpful_count: { type: integer }
+
+    SlaPolicy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        applies_to: { type: string, enum: [incident, service_request] }
+        priority: { type: string, enum: [P1, P2, P3, P4] }
+        response_time_mins: { type: integer }
+        resolution_time_mins: { type: integer }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account (first user becomes admin automatically)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                department: { type: string }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '409': { description: Email already registered, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { description: Invalid credentials }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current authenticated user
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List all users
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+    post:
+      tags: [Users]
+      summary: Create a user directly (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                role: { type: string, enum: [admin, agent, requester] }
+                department: { type: string }
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get a user by id
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: User, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '404': { description: Not found }
+    put:
+      tags: [Users]
+      summary: Update a user's role, department, or active status (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                role: { type: string, enum: [admin, agent, requester] }
+                department: { type: string }
+                is_active: { type: boolean }
+      responses:
+        '200': { description: Updated user, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+
+  /incidents:
+    get:
+      tags: [Incidents]
+      summary: List incidents
+      description: Requesters only see their own incidents. Staff can filter by status, priority, assigned_to, requester_id, and q (search).
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: priority, in: query, schema: { type: string } }
+        - { name: assigned_to, in: query, schema: { type: string } }
+        - { name: requester_id, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: List of incidents
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Incident' }
+    post:
+      tags: [Incidents]
+      summary: Report a new incident
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                category: { type: string }
+                priority: { type: string, enum: [P1, P2, P3, P4] }
+                impact: { type: string }
+                urgency: { type: string }
+                ci_id: { type: string }
+                assigned_to: { type: string }
+      responses:
+        '201': { description: Created incident, content: { application/json: { schema: { $ref: '#/components/schemas/Incident' } } } }
+
+  /incidents/export:
+    get:
+      tags: [Incidents]
+      summary: Export incidents as CSV (admin/agent only)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: priority, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema: { type: string }
+
+  /incidents/{id}:
+    get:
+      tags: [Incidents]
+      summary: Get an incident with its comments
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Incident with comments }
+        '404': { description: Not found }
+    put:
+      tags: [Incidents]
+      summary: Update an incident (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                category: { type: string }
+                priority: { type: string }
+                impact: { type: string }
+                urgency: { type: string }
+                assigned_to: { type: string }
+                ci_id: { type: string }
+                status: { type: string }
+      responses:
+        '200': { description: Updated incident, content: { application/json: { schema: { $ref: '#/components/schemas/Incident' } } } }
+
+  /incidents/{id}/comments:
+    post:
+      tags: [Incidents]
+      summary: Add a comment or internal note to an incident
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                is_internal: { type: boolean }
+      responses:
+        '201': { description: Created comment, content: { application/json: { schema: { $ref: '#/components/schemas/Comment' } } } }
+
+  /service-requests/catalog:
+    get:
+      tags: [Service Requests]
+      summary: List active service catalog items
+      responses:
+        '200': { description: Catalog items }
+    post:
+      tags: [Service Requests]
+      summary: Create a service catalog item (admin only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                category: { type: string }
+                description: { type: string }
+                requires_approval: { type: boolean }
+                fulfillment_team: { type: string }
+      responses:
+        '201': { description: Created catalog item }
+
+  /service-requests:
+    get:
+      tags: [Service Requests]
+      summary: List service requests
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: assigned_to, in: query, schema: { type: string } }
+        - { name: requester_id, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: List of service requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceRequest' }
+    post:
+      tags: [Service Requests]
+      summary: Submit a service request
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                catalog_item_id: { type: string }
+                priority: { type: string }
+      responses:
+        '201': { description: Created request, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+
+  /service-requests/export:
+    get:
+      tags: [Service Requests]
+      summary: Export service requests as CSV (admin/agent only)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200': { description: CSV file, content: { text/csv: { schema: { type: string } } } }
+
+  /service-requests/{id}:
+    get:
+      tags: [Service Requests]
+      summary: Get a service request with its comments
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Service request with comments }
+    put:
+      tags: [Service Requests]
+      summary: Update a service request (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated request, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceRequest' } } } }
+
+  /service-requests/{id}/approve:
+    post:
+      tags: [Service Requests]
+      summary: Approve or reject a pending service request (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+      responses:
+        '200': { description: Updated request }
+
+  /service-requests/{id}/comments:
+    post:
+      tags: [Service Requests]
+      summary: Add a comment to a service request
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                is_internal: { type: boolean }
+      responses:
+        '201': { description: Created comment }
+
+  /problems:
+    get:
+      tags: [Problems]
+      summary: List problems (admin/agent only)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: priority, in: query, schema: { type: string } }
+        - { name: assigned_to, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: List of problems
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Problem' }
+    post:
+      tags: [Problems]
+      summary: Log a new problem, optionally linking existing incidents
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                priority: { type: string }
+                ci_id: { type: string }
+                incident_ids: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Created problem, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
+  /problems/export:
+    get:
+      tags: [Problems]
+      summary: Export problems as CSV
+      responses:
+        '200': { description: CSV file, content: { text/csv: { schema: { type: string } } } }
+
+  /problems/{id}:
+    get:
+      tags: [Problems]
+      summary: Get a problem with linked incidents and comments
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Problem with linked incidents and comments }
+    put:
+      tags: [Problems]
+      summary: Update a problem
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated problem, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
+  /problems/{id}/comments:
+    post:
+      tags: [Problems]
+      summary: Add a comment/update to a problem
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+      responses:
+        '201': { description: Created comment }
+
+  /changes:
+    get:
+      tags: [Changes]
+      summary: List changes
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: change_type, in: query, schema: { type: string } }
+        - { name: assigned_to, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: List of changes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Change' }
+    post:
+      tags: [Changes]
+      summary: Plan a change (admin/agent only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                change_type: { type: string, enum: [standard, normal, emergency] }
+                risk: { type: string, enum: [low, medium, high] }
+                ci_id: { type: string }
+                implementation_plan: { type: string }
+                backout_plan: { type: string }
+                test_plan: { type: string }
+                scheduled_start: { type: string, format: date-time }
+                scheduled_end: { type: string, format: date-time }
+      responses:
+        '201': { description: Created change, content: { application/json: { schema: { $ref: '#/components/schemas/Change' } } } }
+
+  /changes/export:
+    get:
+      tags: [Changes]
+      summary: Export changes as CSV (admin/agent only)
+      responses:
+        '200': { description: CSV file, content: { text/csv: { schema: { type: string } } } }
+
+  /changes/{id}:
+    get:
+      tags: [Changes]
+      summary: Get a change with comments
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Change with comments }
+    put:
+      tags: [Changes]
+      summary: Update a change (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated change, content: { application/json: { schema: { $ref: '#/components/schemas/Change' } } } }
+
+  /changes/{id}/approve:
+    post:
+      tags: [Changes]
+      summary: Approve or reject a pending change (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+      responses:
+        '200': { description: Updated change }
+
+  /changes/{id}/comments:
+    post:
+      tags: [Changes]
+      summary: Add a comment to a change (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+      responses:
+        '201': { description: Created comment }
+
+  /cmdb:
+    get:
+      tags: [CMDB]
+      summary: List configuration items
+      parameters:
+        - { name: ci_type, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: List of configuration items
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CmdbItem' }
+    post:
+      tags: [CMDB]
+      summary: Register a configuration item (admin/agent only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, ci_type]
+              properties:
+                name: { type: string }
+                ci_type: { type: string }
+                status: { type: string }
+                owner_id: { type: string }
+                environment: { type: string }
+                description: { type: string }
+                ip_address: { type: string }
+                location: { type: string }
+      responses:
+        '201': { description: Created item, content: { application/json: { schema: { $ref: '#/components/schemas/CmdbItem' } } } }
+
+  /cmdb/export:
+    get:
+      tags: [CMDB]
+      summary: Export configuration items as CSV (admin/agent only)
+      responses:
+        '200': { description: CSV file, content: { text/csv: { schema: { type: string } } } }
+
+  /cmdb/{id}:
+    get:
+      tags: [CMDB]
+      summary: Get a configuration item with relationships and related incidents
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Configuration item detail }
+    put:
+      tags: [CMDB]
+      summary: Update a configuration item (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated item, content: { application/json: { schema: { $ref: '#/components/schemas/CmdbItem' } } } }
+    delete:
+      tags: [CMDB]
+      summary: Delete a configuration item (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted }
+
+  /cmdb/{id}/relationships:
+    post:
+      tags: [CMDB]
+      summary: Add a dependency relationship from this CI to another (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [child_ci_id]
+              properties:
+                child_ci_id: { type: string }
+                relationship_type: { type: string }
+      responses:
+        '201': { description: Created relationship }
+
+  /knowledge:
+    get:
+      tags: [Knowledge Base]
+      summary: List knowledge base articles (requesters only see published ones)
+      parameters:
+        - { name: category, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: List of articles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/KbArticle' }
+    post:
+      tags: [Knowledge Base]
+      summary: Write a new article (admin/agent only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, content]
+              properties:
+                title: { type: string }
+                content: { type: string }
+                category: { type: string }
+                tags: { type: string }
+                status: { type: string, enum: [draft, published, archived] }
+      responses:
+        '201': { description: Created article, content: { application/json: { schema: { $ref: '#/components/schemas/KbArticle' } } } }
+
+  /knowledge/{id}:
+    get:
+      tags: [Knowledge Base]
+      summary: Get an article (increments its view count)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Article, content: { application/json: { schema: { $ref: '#/components/schemas/KbArticle' } } } }
+    put:
+      tags: [Knowledge Base]
+      summary: Update an article (admin/agent only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated article, content: { application/json: { schema: { $ref: '#/components/schemas/KbArticle' } } } }
+    delete:
+      tags: [Knowledge Base]
+      summary: Delete an article (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted }
+
+  /knowledge/{id}/feedback:
+    post:
+      tags: [Knowledge Base]
+      summary: Record helpful/not-helpful feedback on an article
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [helpful]
+              properties:
+                helpful: { type: boolean }
+      responses:
+        '200': { description: Updated article, content: { application/json: { schema: { $ref: '#/components/schemas/KbArticle' } } } }
+
+  /sla:
+    get:
+      tags: [SLA Policies]
+      summary: List SLA policies
+      responses:
+        '200':
+          description: List of policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SlaPolicy' }
+    post:
+      tags: [SLA Policies]
+      summary: Create an SLA policy (admin only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, applies_to, priority, response_time_mins, resolution_time_mins]
+              properties:
+                name: { type: string }
+                applies_to: { type: string, enum: [incident, service_request] }
+                priority: { type: string, enum: [P1, P2, P3, P4] }
+                response_time_mins: { type: integer }
+                resolution_time_mins: { type: integer }
+      responses:
+        '201': { description: Created policy, content: { application/json: { schema: { $ref: '#/components/schemas/SlaPolicy' } } } }
+
+  /sla/{id}:
+    put:
+      tags: [SLA Policies]
+      summary: Update an SLA policy (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Updated policy, content: { application/json: { schema: { $ref: '#/components/schemas/SlaPolicy' } } } }
+    delete:
+      tags: [SLA Policies]
+      summary: Delete an SLA policy (admin only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted }
+
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Aggregate counts and SLA breach stats across all modules
+      responses:
+        '200': { description: Summary stats }
+
+  /dashboard/recent-activity:
+    get:
+      tags: [Dashboard]
+      summary: Recent audit log entries across all modules
+      responses:
+        '200': { description: List of recent activity entries }
