@@ -2,9 +2,11 @@ import { Hono } from 'hono';
 import { newId, nowIso, audit, body } from '../lib/helpers.js';
 import { authRequired, requireRole } from '../lib/auth.js';
 import { csvResponse } from '../lib/csv.js';
+import { validate, ENUM, MAX, assigneeError, ciError } from '../lib/validate.js';
 
 const r = new Hono();
 r.use('*', authRequired);
+r.use('*', requireRole('admin', 'agent')); // addresses, locations and dependencies — staff only
 
 r.get('/export', requireRole('admin', 'agent'), async (c) => {
   const { ci_type, status } = c.req.query();
@@ -51,6 +53,11 @@ r.post('/', requireRole('admin', 'agent'), async (c) => {
   const db = c.get('db');
   const b = await body(c);
   if (!b.name || !b.ci_type) return c.json({ error: 'name and ci_type are required' }, 400);
+  const bad = validate(b, {
+    name: { max: MAX.name }, ci_type: { oneOf: ENUM.ciType }, status: { oneOf: ENUM.ciStatus }, environment: { oneOf: ENUM.environment },
+    owner_id: { max: MAX.id }, description: { max: MAX.text }, ip_address: { max: 64 }, location: { max: MAX.name },
+  });
+  if (bad) return c.json({ error: bad }, 400);
   const id = newId();
   const now = nowIso();
   await db.run(
@@ -69,6 +76,11 @@ r.put('/:id', requireRole('admin', 'agent'), async (c) => {
   const ci = await db.get('SELECT * FROM cmdb_items WHERE id = ?', id);
   if (!ci) return c.json({ error: 'Not found' }, 404);
   const b = await body(c);
+  const bad = validate(b, {
+    name: { max: MAX.name }, ci_type: { oneOf: ENUM.ciType }, status: { oneOf: ENUM.ciStatus }, environment: { oneOf: ENUM.environment },
+    owner_id: { max: MAX.id }, description: { max: MAX.text }, ip_address: { max: 64 }, location: { max: MAX.name },
+  });
+  if (bad) return c.json({ error: bad }, 400);
   const updates = {};
   for (const f of ['name', 'ci_type', 'status', 'owner_id', 'environment', 'description', 'ip_address', 'location']) if (b[f] !== undefined) updates[f] = b[f];
   const m = { ...ci, ...updates };
@@ -94,6 +106,14 @@ r.delete('/:id', requireRole('admin'), async (c) => {
 r.post('/:id/relationships', requireRole('admin', 'agent'), async (c) => {
   const { child_ci_id, relationship_type } = await body(c);
   if (!child_ci_id) return c.json({ error: 'child_ci_id is required' }, 400);
+  const parentId = c.req.param('id');
+  if (child_ci_id === parentId) return c.json({ error: 'An item cannot depend on itself' }, 400);
+  const bad = validate({ relationship_type }, { relationship_type: { max: 50 } });
+  if (bad) return c.json({ error: bad }, 400);
+  const db = c.get('db');
+  if (!(await db.get('SELECT id FROM cmdb_items WHERE id = ?', parentId)) || !(await db.get('SELECT id FROM cmdb_items WHERE id = ?', child_ci_id))) {
+    return c.json({ error: 'Both configuration items must exist' }, 400);
+  }
   const id = newId();
   const type = relationship_type || 'depends_on';
   await c.get('db').run(

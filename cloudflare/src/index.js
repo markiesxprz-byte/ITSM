@@ -16,6 +16,7 @@ import knowledge from './routes/knowledge.js';
 import sla from './routes/sla.js';
 import dashboard from './routes/dashboard.js';
 import leads from './routes/leads.js';
+import settings from './routes/settings.js';
 
 // Only /api/* reaches this Worker (see "run_worker_first" in wrangler.jsonc).
 // Everything else — the marketing site and the React app — is served straight from
@@ -23,6 +24,16 @@ import leads from './routes/leads.js';
 const app = new Hono();
 
 app.use('/api/*', cors()); // bearer-token auth (no cookies), so open CORS is safe
+
+// Browser protections for every API response: never sniffed, never cached by browsers or shared
+// proxies (responses contain customer data), never framed, no referrer leakage.
+app.use('/api/*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'no-referrer');
+});
 
 app.use('/api/*', async (c, next) => {
   const db = makeDb(c.env.DB);
@@ -54,6 +65,7 @@ app.route('/api/knowledge', knowledge);
 app.route('/api/sla', sla);
 app.route('/api/dashboard', dashboard);
 app.route('/api/leads', leads);
+app.route('/api/settings', settings);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => {

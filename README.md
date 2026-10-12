@@ -30,7 +30,7 @@ frontend/               React + Vite + Tailwind (marketing site and the app)
 | **Dashboard & CSV** | Open/breached counts, status charts, activity feed; CSV export on every list. |
 | **Marketing site** | Landing page, pricing (ZAR/USD, monthly/annual), trial signup. |
 
-**Roles** — `admin` (everything), `agent` (works tickets, problems, changes, CMDB, knowledge base), `requester` (raises and tracks their own tickets; cannot see internal notes or other people's tickets).
+**Roles** — `admin` (everything), `agent` (works tickets, problems, changes, CMDB, knowledge base), `requester` (raises and tracks only their own tickets and sees published knowledge-base articles; cannot see internal notes, other people's tickets, the user directory, changes, problems, the CMDB or the activity feed).
 
 ## Deploy to Cloudflare
 
@@ -52,7 +52,7 @@ npm run deploy
 Cloudflare creates the D1 database from the binding in `wrangler.jsonc` on first deploy. *(This automatic provisioning is from my knowledge of recent Wrangler behaviour and was not tested against a live account. If the first deploy complains about the database, run `npx wrangler d1 create infovantage-itsm` once and paste the printed `database_id` into the `d1_databases` entry in `wrangler.jsonc`.)*
 
 ### Immediately after the first deploy
-Open the `*.workers.dev` URL and **register your own account at once. The first account created becomes the administrator** — there are no demo accounts, and until you register, anyone who finds the URL could claim it.
+Open the `*.workers.dev` URL and **register your own account at once. The first account created becomes the administrator** — there are no demo accounts, and until you register, anyone who finds the URL could claim it. After that first account, **self-registration is closed**: an administrator creates accounts (Administration → Users) or opens registration deliberately, optionally limited to one email domain.
 
 On that first request the app seeds default SLA policies, a starter service catalog and a welcome article, and generates its own signing secret (stored in D1). To use your own secret instead: `npx wrangler secret put JWT_SECRET`.
 
@@ -77,21 +77,57 @@ npx wrangler secret put RESEND_API_KEY
 ```
 and add `"vars": { "FROM_EMAIL": "no-reply@yourdomain" }` (a sender verified in Resend) to `wrangler.jsonc`. Optional: `APP_URL` for links in emails, `NOTIFICATIONS_ENABLED=false` to switch emails off. With no key, emails are written to the Worker log instead and everything else keeps working.
 
-## Marketing site and trial signups
-`/` landing page, `/pricing`, `/start` trial form. The app itself lives at `/login` and `/dashboard`.
+## Public site, demo requests and waitlist
 
-The offer is **one month free**, starting the day the workspace is ready; the Trial Leads list tracks it. Setting a lead to `provisioned` records the start date (today, or a date you pick under **Ready on**) and shows **when the month ends** with a days-left chip; leads ending within 7 days (or already ended) are called out in a banner. **Nothing sends reminders, bills, or switches a workspace off at the end of the month** — you follow up by hand.
+The public pages are `/` (home), `/software` (the SaaS landing page: capabilities, pricing, available-versus-planned comparison, security, FAQ, contact), `/start` (demo request or waitlist form), `/support`, `/privacy` and `/terms`. `/pricing` redirects to the pricing section. The application itself lives at `/login` and `/dashboard`. Public-site settings (support email, canonical URL, consent wording version) are in `frontend/src/siteConfig.js`.
 
-Submitting `/start` stores a row in the `leads` table and emails the submitter a confirmation. **Nothing is provisioned automatically.** Admins work the queue in **Administration → Trial Leads** (`new → contacted → provisioned → closed`) and stand up each customer's deployment by hand. Don't collect payment until that step is fast and reliable.
+**Plans as advertised:** Starter **R199 per agent per month** (available by request); Professional **R349** and MSP / Business Plus **R549** are shown as **Coming soon** with a waitlist button only. Nothing on the site can be purchased, there is no checkout, and no payment details are collected. A billable agent is a user with the Agent or Administrator role; requesters are not billed. The site makes **no trial offer** — a free trial may be shown only once trial start, expiry, conversion and cancellation are built and tested.
+
+**Requests:** `/start` posts to `POST /api/leads`. The server requires explicit consent, validates every field, drops submissions that fill a hidden spam-trap field, refuses more than 10 per hour per address, ignores an identical request from the same person within 24 hours, and stores the consent time and the version of the wording shown. The visitor sees the confirmation page only after the server confirms the record was saved; failures show an error. Admins work the queue under **Administration → Demo & waitlist** (status, notes, CSV export). Setting a request to *provisioned* records the date and shows when a one-month pilot would end — internal tracking only; nothing is advertised, billed or switched off automatically.
+
+**Before this goes live you must supply:** a monitored support email or phone (`siteConfig.js`), the organisation's legal name and an Information Officer for the privacy notice, and a lawyer's review of the privacy notice and terms (the pages say they have not been reviewed).
 
 ## API documentation
 `/api/docs` serves interactive Swagger UI (loaded from a public CDN) for every endpoint; the raw spec is at `/api/openapi.yaml`.
 
-## Security notes
-1. **Password hashing is capped by the platform.** Workers allows at most 100,000 PBKDF2 iterations, below OWASP's current recommendation (600,000). Add a Cloudflare **rate-limiting rule** (and ideally Turnstile) on `/api/auth/*` to compensate.
-2. **No built-in rate limiting or lockout** — use the Cloudflare rule above.
-3. Requesters can never read internal notes or other people's tickets; this is covered by `npm run test:api`.
-4. The signing secret is generated per deployment and stored in D1. Anyone with access to your D1 database can read it, so treat database access as admin access.
+## Access model and customer data separation
+
+**Between customers:** one customer = one deployment (its own Worker **and its own D1 database**). Separation is the deployment boundary; there is no multi-tenant row-level isolation inside a database. **Never reuse a `database_name` / `database_id` across customers** — two Workers bound to the same database would share every ticket. Check this on every new deployment.
+
+**Inside a workspace** (enforced by the API, not just hidden in the menu, and covered by `npm run test:api`):
+
+| | Requester | Agent | Admin |
+|---|---|---|---|
+| Own tickets: raise, read, comment | yes | yes | yes |
+| Other people's tickets | no | yes | yes |
+| Internal notes | no | yes | yes |
+| Problems, changes, CMDB, user directory, activity feed | no | yes | yes |
+| Users, SLA policies, catalog, trial leads, registration setting | no | no | yes |
+
+- Every request is checked against the database, so **deactivating or demoting someone takes effect immediately**, not when their token expires. The last active administrator cannot be removed or demoted.
+- Assignees must be active staff; every write is validated (allowed values, lengths, email format, password of 8–128 characters).
+- Throttling (per client address): 5 wrong passwords per account and 30 per address in 15 minutes; 10 registrations/hour; 10 trial-form submissions/hour; 5 wrong "current password" guesses per account in 15 minutes.
+- Browser protections: strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, referrer policy and HSTS on the site; `no-store` on every API response.
+- Password recovery: an admin can reset any password (Administration → Users); everyone can change their own (sidebar → Change password).
+
+## Known gaps — not yet production-grade
+1. **Plan limits are not enforced.** Every workspace has every module and unlimited agents, whatever plan the customer chose. The pricing page's tiering (Change and CMDB on Pro, etc.) is currently a promise, not a control.
+2. **No email-based password reset, no MFA, no email verification.** Recovery is by an administrator.
+3. **Tokens last 12 hours and cannot be revoked one by one** (deactivating the user does revoke them). Changing a password does not end other sessions.
+4. **Ticket status changes are not constrained** — any valid status can follow any other (for example `new` straight to `closed`). Whether to enforce a stricter lifecycle is a process decision for you.
+5. **Password hashing is capped by the platform** at 100,000 PBKDF2 iterations (OWASP recommends 600,000); the throttling above compensates, and Cloudflare rate-limiting rules add a further layer.
+6. **Separation between customers depends on correct provisioning** (see above); nothing in the software can detect two customers sharing a database.
+7. **No data-subject tooling** (export or deletion of one person's data) beyond CSV export, and no documented backup/restore procedure — check D1's point-in-time recovery on your plan.
+
+## Decisions and roadmap (recorded)
+1. **Starter stays at R199 per agent per month** as the public price.
+2. **Production readiness of the ticket workflow, access controls and customer separation comes first** — see the two sections above.
+3. **Next: SLA tracking and notifications, then reporting.**
+   - Exists today: SLA policies per priority, due dates set when a ticket is raised, a past-due count on the dashboard, and emails on ticket events (needs a Resend key).
+   - Not built: business hours and holidays, pausing the clock while a ticket waits on the customer, recalculating when priority changes, "at risk" and "breached" notifications (needs a scheduled Worker), escalation, and first-response measurement.
+   - Reporting (SLA attainment, volumes, resolution times) follows once SLA data is trustworthy.
+4. **No payment processing until** a paid plan exists in the software and these are handled: a subscription record per workspace (plan, seats, trial start and end, active / past due / cancelled, renewal date), plan and seat limits actually enforced, what happens when a trial ends, renewals, cancellations and failed payments, invoices with VAT, and terms. None of this exists yet and no payment code has been added.
+5. **Review pricing after the first 10 paying organisations or 90 days, whichever comes first.** The 90 days should start from the first paying customer's start date (confirm). Collect the count of paying organisations, trial-to-paid conversion and cancellations so the review has data; there is no tooling for this yet.
 
 ## Changing the schema later
 Edit `cloudflare/src/schema.sql` and add a numbered entry in `cloudflare/src/lib/migrate.js`. Several Worker instances can start at once, so **every statement in a migration must be idempotent** (`CREATE … IF NOT EXISTS`, `INSERT OR IGNORE`; guard an `ALTER TABLE` with `pragma_table_info`).

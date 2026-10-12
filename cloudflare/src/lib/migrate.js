@@ -13,7 +13,7 @@ const MIGRATIONS = [
   { version: 1, sql: schemaSql },
 
   // v2: remember when each trial workspace was set up, so the Trial Leads list can show
-  // when the free month ends. Written as a guarded code migration because SQLite has no
+  // when the one-month pilot ends. Written as a guarded code migration because SQLite has no
   // "ADD COLUMN IF NOT EXISTS". If two instances race, the loser's ALTER fails with
   // "duplicate column" — that just means the winner already did it, so it is ignored.
   {
@@ -26,6 +26,32 @@ const MIGRATIONS = [
       } catch (err) {
         if (!/duplicate column/i.test(String(err && err.message))) throw err;
       }
+    },
+  },
+
+  // v3: counters for sign-in throttling and form-spam limits (see lib/throttle.js).
+  {
+    version: 3,
+    sql: `CREATE TABLE IF NOT EXISTS auth_attempts (
+      key TEXT PRIMARY KEY,
+      fails INTEGER NOT NULL,
+      first_at INTEGER NOT NULL
+    )`,
+  },
+
+  // v4: what kind of request this is, the visitor's message, and a record of the consent they gave.
+  // All additive. SQLite has no "ADD COLUMN IF NOT EXISTS", so each column is checked first, and a
+  // "duplicate column" error from a racing instance is ignored (same reasoning as v2).
+  {
+    version: 4,
+    run: async (db) => {
+      for (const [col, type] of [['kind', 'TEXT'], ['message', 'TEXT'], ['consent', 'INTEGER'], ['consent_at', 'TEXT'], ['consent_version', 'TEXT']]) {
+        const has = await db.get("SELECT COUNT(*) AS c FROM pragma_table_info('leads') WHERE name = ?", col);
+        if (has.c) continue;
+        try { await db.run(`ALTER TABLE leads ADD COLUMN ${col} ${type}`); }
+        catch (err) { if (!/duplicate column/i.test(String(err && err.message))) throw err; }
+      }
+      await db.run('CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at)');
     },
   },
 ];

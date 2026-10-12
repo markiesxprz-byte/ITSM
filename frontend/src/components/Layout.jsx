@@ -3,17 +3,60 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import icon from '../assets/infovantage-icon.png';
+import client from '../api/client';
+import Modal from './Modal';
+import { Button, Field, Input } from './ui';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: '◆', roles: ['admin', 'agent', 'requester'] },
   { to: '/incidents', label: 'Incidents', icon: '▲', roles: ['admin', 'agent', 'requester'] },
   { to: '/service-requests', label: 'Service Requests', icon: '◇', roles: ['admin', 'agent', 'requester'] },
   { to: '/problems', label: 'Problems', icon: '●', roles: ['admin', 'agent'] },
-  { to: '/changes', label: 'Changes', icon: '▣', roles: ['admin', 'agent', 'requester'] },
+  { to: '/changes', label: 'Changes', icon: '▣', roles: ['admin', 'agent'] },
   { to: '/cmdb', label: 'CMDB', icon: '▦', roles: ['admin', 'agent'] },
   { to: '/knowledge', label: 'Knowledge Base', icon: '▤', roles: ['admin', 'agent', 'requester'] },
   { to: '/admin', label: 'Administration', icon: '⚙', roles: ['admin'] },
 ];
+
+function ChangePasswordModal({ onClose }) {
+  const [form, setForm] = useState({ current_password: '', new_password: '' });
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    try {
+      await client.post('/auth/change-password', form);
+      setDone(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not change the password.');
+    }
+  }
+  return (
+    <Modal open onClose={onClose} title="Change your password">
+      {done ? (
+        <div>
+          <p className="mb-4 text-sm text-ink/70">Your password was changed.</p>
+          <Button onClick={onClose}>Done</Button>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <Field label="Current password">
+            <Input type="password" required value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} autoComplete="current-password" />
+          </Field>
+          <Field label="New password" hint="At least 8 characters">
+            <Input type="password" required minLength={8} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} autoComplete="new-password" />
+          </Field>
+          {error && <div className="mb-3 rounded-md bg-brick-50 px-3 py-2 text-sm text-brick-600">{error}</div>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Change password</Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
@@ -21,6 +64,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   const items = NAV_ITEMS.filter((item) => item.roles.includes(user?.role));
   const currentItem = items.find((item) => (location.pathname.startsWith(item.to)));
@@ -75,12 +119,15 @@ export default function Layout({ children }) {
       <div className="border-t border-white/10 px-5 py-4">
         <div className="text-sm font-medium">{user?.name}</div>
         <div className="text-xs capitalize text-stone-50/50">{user?.role}</div>
+        <button onClick={() => setPwOpen(true)} className="mt-3 block text-xs text-stone-50/60 hover:text-stone-50 hover:underline">
+          Change password
+        </button>
         <button
           onClick={() => {
             logout();
             navigate('/login');
           }}
-          className="mt-3 text-xs text-stone-50/60 hover:text-stone-50 hover:underline"
+          className="mt-2 block text-xs text-stone-50/60 hover:text-stone-50 hover:underline"
         >
           Sign out
         </button>
@@ -90,6 +137,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex min-h-screen bg-stone-50 dark:bg-slate-900">
+      {pwOpen && <ChangePasswordModal onClose={() => setPwOpen(false)} />}
       {/* Desktop sidebar — always visible at md and up */}
       <aside className="hidden w-60 flex-shrink-0 flex-col bg-slate-850 text-stone-50 md:flex">
         {sidebarContent}

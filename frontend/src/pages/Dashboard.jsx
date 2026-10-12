@@ -38,7 +38,9 @@ export default function Dashboard() {
     <div>
       <div className="mb-8">
         <h1 className="font-display text-2xl font-bold text-ink">Welcome back, {user.name.split(' ')[0]}</h1>
-        <p className="text-sm text-ink/50">Here's what's happening across your service desk today.</p>
+        <p className="text-sm text-ink/50">
+          {user.role === 'requester' ? "Here's where your tickets stand." : "Here's what's happening across your service desk today."}
+        </p>
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
@@ -54,12 +56,16 @@ export default function Dashboard() {
           sub={`${summary.serviceRequests.breached} past SLA`}
           tone={summary.serviceRequests.breached > 0 ? 'alert' : 'default'}
         />
-        <StatTile label="Open problems" value={summary.problems.open} sub="Under investigation" />
-        <StatTile
-          label="Changes pending approval"
-          value={summary.changes.pendingApproval}
-          sub={`${summary.changes.upcoming} scheduled ahead`}
-        />
+        {user.role !== 'requester' && (
+          <>
+            <StatTile label="Open problems" value={summary.problems.open} sub="Under investigation" />
+            <StatTile
+              label="Changes pending approval"
+              value={summary.changes.pendingApproval}
+              sub={`${summary.changes.upcoming} scheduled ahead`}
+            />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -81,6 +87,7 @@ export default function Dashboard() {
           )}
         </Card>
 
+        {user.role !== 'requester' && (
         <Card className="p-5">
           <h2 className="font-display mb-4 text-base font-semibold text-ink">Changes by status</h2>
           {changeStatusData.length === 0 ? (
@@ -97,6 +104,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )}
         </Card>
+        )}
       </div>
 
       {user.role !== 'requester' && (

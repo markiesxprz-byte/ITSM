@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { newId, nowIso, audit, body } from '../lib/helpers.js';
 import { authRequired, requireRole } from '../lib/auth.js';
+import { validate, ENUM, MAX, assigneeError, ciError } from '../lib/validate.js';
 
 const r = new Hono();
 r.use('*', authRequired);
@@ -31,6 +32,8 @@ r.post('/', requireRole('admin', 'agent'), async (c) => {
   const db = c.get('db');
   const b = await body(c);
   if (!b.title || !b.content) return c.json({ error: 'title and content are required' }, 400);
+  const bad = validate(b, { title: { max: MAX.name }, content: { max: MAX.article }, category: { max: MAX.short }, tags: { max: MAX.tags }, status: { oneOf: ENUM.kbStatus } });
+  if (bad) return c.json({ error: bad }, 400);
   const id = newId();
   const now = nowIso();
   await db.run(
@@ -47,6 +50,8 @@ r.put('/:id', requireRole('admin', 'agent'), async (c) => {
   const a = await db.get('SELECT * FROM kb_articles WHERE id = ?', id);
   if (!a) return c.json({ error: 'Not found' }, 404);
   const b = await body(c);
+  const bad = validate(b, { title: { max: MAX.name }, content: { max: MAX.article }, category: { max: MAX.short }, tags: { max: MAX.tags }, status: { oneOf: ENUM.kbStatus } });
+  if (bad) return c.json({ error: bad }, 400);
   const updates = {};
   for (const f of ['title', 'content', 'category', 'tags', 'status']) if (b[f] !== undefined) updates[f] = b[f];
   const m = { ...a, ...updates };

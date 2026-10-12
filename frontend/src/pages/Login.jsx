@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import client from '../api/client';
 import { Button, Field, Input } from '../components/ui';
 import logo from '../assets/infovantage-logo.png';
 
@@ -11,6 +12,13 @@ export default function Login() {
   const [form, setForm] = useState({ name: '', email: '', password: '', department: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Whether this workspace lets people create their own accounts (the server enforces it either way).
+  const [reg, setReg] = useState(null);
+  useEffect(() => {
+    client.get('/auth/registration')
+      .then((res) => { setReg(res.data); if (res.data.first_run) setMode('register'); })
+      .catch(() => setReg({ open: true }));
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -38,6 +46,12 @@ export default function Login() {
           <div className="text-sm text-ink/50">IT Service Management</div>
         </div>
 
+        {reg && !reg.open && (
+          <div className="mb-6 rounded-md bg-stone-50 px-3 py-2 text-sm text-ink/60">
+            Accounts on this workspace are created by your administrator.
+          </div>
+        )}
+        {reg && reg.open && (
         <div className="mb-6 flex rounded-md bg-stone-100 p-1 text-sm">
           <button
             className={`flex-1 rounded py-1.5 font-medium ${mode === 'login' ? 'bg-white shadow-sm' : 'text-ink/50'}`}
@@ -52,6 +66,7 @@ export default function Login() {
             Create account
           </button>
         </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           {mode === 'register' && (
@@ -73,10 +88,11 @@ export default function Login() {
               placeholder="you@company.com"
             />
           </Field>
-          <Field label="Password">
+          <Field label="Password" hint={mode === 'register' ? 'At least 8 characters' : undefined}>
             <Input
               type="password"
               required
+              minLength={mode === 'register' ? 8 : undefined}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="••••••••"
@@ -101,7 +117,9 @@ export default function Login() {
 
         {mode === 'register' && (
           <div className="mt-6 rounded-md bg-stone-50 px-3 py-2 text-xs text-ink/50">
-            The first account created on a new workspace becomes its administrator.
+            {reg && reg.first_run
+              ? 'This workspace has no accounts yet. The account you create now becomes its administrator.'
+              : reg && reg.domain ? `Use your @${reg.domain} email address.` : 'Your administrator may need to approve what you can access.'}
           </div>
         )}
       </div>

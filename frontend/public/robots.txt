@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /login
+Disallow: /dashboard
+Disallow: /incidents
+Disallow: /admin
+
+Sitemap: https://itsm.markiesxprz.workers.dev/sitemap.xml

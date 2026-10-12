@@ -53,11 +53,17 @@ export async function authRequired(c, next) {
   const header = c.req.header('Authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return c.json({ error: 'Authentication required' }, 401);
+  let payload;
   try {
-    c.set('user', await verify(token, await getSecret(c), 'HS256'));
+    payload = await verify(token, await getSecret(c), 'HS256');
   } catch {
     return c.json({ error: 'Invalid or expired token' }, 401);
   }
+  // The token only proves who signed in. The database decides what they may do *now*, so
+  // deactivating a user or changing their role takes effect immediately, not when the token expires.
+  const row = await c.get('db').get('SELECT id, name, email, role, is_active FROM users WHERE id = ?', payload.id);
+  if (!row || !row.is_active) return c.json({ error: 'Invalid or expired token' }, 401);
+  c.set('user', { id: row.id, name: row.name, email: row.email, role: row.role });
   await next();
 }
 

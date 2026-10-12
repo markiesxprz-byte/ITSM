@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { newId, nextNumber, nowIso, audit, body } from '../lib/helpers.js';
 import { authRequired, requireRole } from '../lib/auth.js';
 import { csvResponse } from '../lib/csv.js';
+import { validate, ENUM, MAX, assigneeError, ciError } from '../lib/validate.js';
 
 const r = new Hono();
 r.use('*', authRequired);
@@ -48,6 +49,16 @@ r.post('/', async (c) => {
   const user = c.get('user');
   const b = await body(c);
   if (!b.title) return c.json({ error: 'title is required' }, 400);
+  const bad = validate(b, { title: { max: MAX.name }, description: { max: MAX.text }, priority: { oneOf: ENUM.priority }, ci_id: { max: MAX.id } });
+  if (bad) return c.json({ error: bad }, 400);
+  if (b.incident_ids !== undefined && (!Array.isArray(b.incident_ids) || b.incident_ids.length > 100 || b.incident_ids.some((x) => typeof x !== 'string'))) {
+    return c.json({ error: 'incident_ids must be a list of at most 100 incident ids' }, 400);
+  }
+  const refErr = await ciError(db, b.ci_id);
+  if (refErr) return c.json({ error: refErr }, 400);
+  for (const incId of b.incident_ids || []) {
+    if (!(await db.get('SELECT id FROM incidents WHERE id = ?', incId))) return c.json({ error: 'incident_ids contains an unknown incident' }, 400);
+  }
   const id = newId();
   const number = await nextNumber(db, 'PRB', 'problems');
   const now = nowIso();
@@ -72,6 +83,13 @@ r.put('/:id', async (c) => {
   const problem = await db.get('SELECT * FROM problems WHERE id = ?', id);
   if (!problem) return c.json({ error: 'Not found' }, 404);
   const b = await body(c);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, priority: { oneOf: ENUM.priority }, status: { oneOf: ENUM.problemStatus },
+    root_cause: { max: MAX.text }, workaround: { max: MAX.text }, assigned_to: { max: MAX.id },
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  const refErr = await assigneeError(db, b.assigned_to);
+  if (refErr) return c.json({ error: refErr }, 400);
   const updates = {};
   for (const f of ['title', 'description', 'priority', 'status', 'root_cause', 'workaround', 'assigned_to']) if (b[f] !== undefined) updates[f] = b[f];
   const now = nowIso();
@@ -92,6 +110,7 @@ r.post('/:id/comments', async (c) => {
   if (!problem) return c.json({ error: 'Not found' }, 404);
   const { content, is_internal } = await body(c);
   if (!content) return c.json({ error: 'content is required' }, 400);
+  if (typeof content !== 'string' || content.length > MAX.text) return c.json({ error: `content must be text of at most ${MAX.text} characters` }, 400);
   const id = newId();
   await db.run(
     `INSERT INTO comments (id, ticket_type, ticket_id, user_id, content, is_internal, created_at) VALUES (?, 'problem', ?, ?, ?, ?, ?)`,

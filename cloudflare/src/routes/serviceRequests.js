@@ -3,6 +3,7 @@ import { newId, nextNumber, nowIso, getSla, addMinutesIso, audit, body, fire } f
 import { authRequired, requireRole } from '../lib/auth.js';
 import { csvResponse } from '../lib/csv.js';
 import { makeNotifier } from '../lib/mail.js';
+import { validate, ENUM, MAX, assigneeError, ciError } from '../lib/validate.js';
 
 const r = new Hono();
 r.use('*', authRequired);
@@ -32,6 +33,8 @@ r.post('/catalog', requireRole('admin'), async (c) => {
   const db = c.get('db');
   const b = await body(c);
   if (!b.name) return c.json({ error: 'name is required' }, 400);
+  const bad = validate(b, { name: { max: MAX.name }, category: { max: MAX.short }, description: { max: MAX.text }, fulfillment_team: { max: MAX.name } });
+  if (bad) return c.json({ error: bad }, 400);
   const id = newId();
   await db.run(
     `INSERT INTO service_catalog (id, name, category, description, requires_approval, fulfillment_team) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -72,10 +75,15 @@ r.post('/', async (c) => {
   const user = c.get('user');
   const b = await body(c);
   if (!b.title) return c.json({ error: 'title is required' }, 400);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, priority: { oneOf: ENUM.priority }, catalog_item_id: { max: MAX.id },
+  });
+  if (bad) return c.json({ error: bad }, 400);
   let requiresApproval = false;
   if (b.catalog_item_id) {
     const item = await db.get('SELECT * FROM service_catalog WHERE id = ?', b.catalog_item_id);
-    requiresApproval = !!(item && item.requires_approval);
+    if (!item) return c.json({ error: 'catalog_item_id does not match a catalog item' }, 400);
+    requiresApproval = !!item.requires_approval;
   }
   const id = newId();
   const number = await nextNumber(db, 'SR', 'service_requests');
@@ -102,6 +110,13 @@ r.put('/:id', requireRole('admin', 'agent'), async (c) => {
   const sr = await db.get('SELECT * FROM service_requests WHERE id = ?', id);
   if (!sr) return c.json({ error: 'Not found' }, 404);
   const b = await body(c);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, priority: { oneOf: ENUM.priority },
+    status: { oneOf: ENUM.requestStatus }, assigned_to: { max: MAX.id },
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  const refErr = await assigneeError(db, b.assigned_to);
+  if (refErr) return c.json({ error: refErr }, 400);
   const updates = {};
   for (const f of ['title', 'description', 'priority', 'assigned_to', 'status']) if (b[f] !== undefined) updates[f] = b[f];
   const now = nowIso();
@@ -146,8 +161,11 @@ r.post('/:id/comments', async (c) => {
   const user = c.get('user');
   const sr = await db.get('SELECT * FROM service_requests WHERE id = ?', c.req.param('id'));
   if (!sr) return c.json({ error: 'Not found' }, 404);
+  // Requesters may only write on their own requests.
+  if (user.role === 'requester' && sr.requester_id !== user.id) return c.json({ error: 'Forbidden' }, 403);
   const { content, is_internal } = await body(c);
   if (!content) return c.json({ error: 'content is required' }, 400);
+  if (typeof content !== 'string' || content.length > MAX.text) return c.json({ error: `content must be text of at most ${MAX.text} characters` }, 400);
   if (is_internal && user.role === 'requester') return c.json({ error: 'Forbidden' }, 403);
   const id = newId();
   await db.run(

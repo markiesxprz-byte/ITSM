@@ -3,9 +3,11 @@ import { newId, nextNumber, nowIso, audit, body, fire } from '../lib/helpers.js'
 import { authRequired, requireRole } from '../lib/auth.js';
 import { csvResponse } from '../lib/csv.js';
 import { makeNotifier } from '../lib/mail.js';
+import { validate, ENUM, MAX, assigneeError, ciError } from '../lib/validate.js';
 
 const r = new Hono();
 r.use('*', authRequired);
+r.use('*', requireRole('admin', 'agent')); // change records hold internal plans and risk — staff only
 
 r.get('/export', requireRole('admin', 'agent'), async (c) => {
   const { status, change_type } = c.req.query();
@@ -51,6 +53,14 @@ r.post('/', requireRole('admin', 'agent'), async (c) => {
   const user = c.get('user');
   const b = await body(c);
   if (!b.title) return c.json({ error: 'title is required' }, 400);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, change_type: { oneOf: ENUM.changeType }, risk: { oneOf: ENUM.risk },
+    ci_id: { max: MAX.id }, implementation_plan: { max: MAX.text }, backout_plan: { max: MAX.text }, test_plan: { max: MAX.text },
+    scheduled_start: { max: 40 }, scheduled_end: { max: 40 },
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  const refErr = await ciError(db, b.ci_id);
+  if (refErr) return c.json({ error: refErr }, 400);
   const id = newId();
   const number = await nextNumber(db, 'CHG', 'changes');
   const now = nowIso();
@@ -80,6 +90,14 @@ r.put('/:id', requireRole('admin', 'agent'), async (c) => {
   const change = await db.get('SELECT * FROM changes WHERE id = ?', id);
   if (!change) return c.json({ error: 'Not found' }, 404);
   const b = await body(c);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, risk: { oneOf: ENUM.risk }, status: { oneOf: ENUM.changeStatus },
+    assigned_to: { max: MAX.id }, implementation_plan: { max: MAX.text }, backout_plan: { max: MAX.text }, test_plan: { max: MAX.text },
+    scheduled_start: { max: 40 }, scheduled_end: { max: 40 }, actual_start: { max: 40 }, actual_end: { max: 40 },
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  const refErr = await assigneeError(db, b.assigned_to);
+  if (refErr) return c.json({ error: refErr }, 400);
   const updates = {};
   for (const f of ['title', 'description', 'risk', 'status', 'assigned_to', 'implementation_plan', 'backout_plan',
     'test_plan', 'scheduled_start', 'scheduled_end', 'actual_start', 'actual_end']) if (b[f] !== undefined) updates[f] = b[f];
@@ -115,6 +133,7 @@ r.post('/:id/comments', requireRole('admin', 'agent'), async (c) => {
   if (!change) return c.json({ error: 'Not found' }, 404);
   const { content, is_internal } = await body(c);
   if (!content) return c.json({ error: 'content is required' }, 400);
+  if (typeof content !== 'string' || content.length > MAX.text) return c.json({ error: `content must be text of at most ${MAX.text} characters` }, 400);
   const id = newId();
   await db.run(
     `INSERT INTO comments (id, ticket_type, ticket_id, user_id, content, is_internal, created_at) VALUES (?, 'change', ?, ?, ?, ?, ?)`,

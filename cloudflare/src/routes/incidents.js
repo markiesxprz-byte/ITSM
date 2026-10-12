@@ -3,6 +3,7 @@ import { newId, nextNumber, nowIso, getSla, addMinutesIso, audit, body, fire } f
 import { authRequired, requireRole } from '../lib/auth.js';
 import { csvResponse } from '../lib/csv.js';
 import { makeNotifier } from '../lib/mail.js';
+import { validate, ENUM, MAX, assigneeError, ciError } from '../lib/validate.js';
 
 const r = new Hono();
 r.use('*', authRequired);
@@ -60,6 +61,18 @@ r.post('/', async (c) => {
   const user = c.get('user');
   const b = await body(c);
   if (!b.title) return c.json({ error: 'title is required' }, 400);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, category: { max: MAX.short },
+    priority: { oneOf: ENUM.priority }, impact: { oneOf: ENUM.level }, urgency: { oneOf: ENUM.level },
+    assigned_to: { max: MAX.id }, ci_id: { max: MAX.id },
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  // Requesters raise tickets; only staff may assign them or link configuration items.
+  const staff = user.role !== 'requester';
+  if (staff) {
+    const e = (await assigneeError(db, b.assigned_to)) || (await ciError(db, b.ci_id));
+    if (e) return c.json({ error: e }, 400);
+  }
   const id = newId();
   const number = await nextNumber(db, 'INC', 'incidents');
   const prio = b.priority || 'P3';
@@ -70,7 +83,7 @@ r.post('/', async (c) => {
        requester_id, assigned_to, ci_id, sla_response_due, sla_resolution_due, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, number, b.title, b.description || null, b.category || 'general', prio, b.impact || 'medium',
-    b.urgency || 'medium', user.id, b.assigned_to || null, b.ci_id || null,
+    b.urgency || 'medium', user.id, staff ? (b.assigned_to || null) : null, staff ? (b.ci_id || null) : null,
     addMinutesIso(sla.response), addMinutesIso(sla.resolution), now, now
   );
   await audit(db, 'incident', id, 'created', user.id, { number, priority: prio });
@@ -85,6 +98,14 @@ r.put('/:id', requireRole('admin', 'agent'), async (c) => {
   const inc = await db.get('SELECT * FROM incidents WHERE id = ?', id);
   if (!inc) return c.json({ error: 'Not found' }, 404);
   const b = await body(c);
+  const bad = validate(b, {
+    title: { max: MAX.name }, description: { max: MAX.text }, category: { max: MAX.short },
+    priority: { oneOf: ENUM.priority }, impact: { oneOf: ENUM.level }, urgency: { oneOf: ENUM.level },
+    status: { oneOf: ENUM.incidentStatus }, assigned_to: { max: MAX.id }, ci_id: { max: MAX.id },
+  });
+  if (bad) return c.json({ error: bad }, 400);
+  const refErr = (await assigneeError(db, b.assigned_to)) || (await ciError(db, b.ci_id));
+  if (refErr) return c.json({ error: refErr }, 400);
   const fields = ['title', 'description', 'category', 'priority', 'impact', 'urgency', 'assigned_to', 'ci_id', 'status'];
   const updates = {};
   for (const f of fields) if (b[f] !== undefined) updates[f] = b[f];
@@ -122,8 +143,11 @@ r.post('/:id/comments', async (c) => {
   const user = c.get('user');
   const inc = await db.get('SELECT * FROM incidents WHERE id = ?', c.req.param('id'));
   if (!inc) return c.json({ error: 'Not found' }, 404);
+  // Requesters may only write on their own tickets.
+  if (user.role === 'requester' && inc.requester_id !== user.id) return c.json({ error: 'Forbidden' }, 403);
   const { content, is_internal } = await body(c);
   if (!content) return c.json({ error: 'content is required' }, 400);
+  if (typeof content !== 'string' || content.length > MAX.text) return c.json({ error: `content must be text of at most ${MAX.text} characters` }, 400);
   if (is_internal && user.role === 'requester') return c.json({ error: 'Requesters cannot add internal notes' }, 403);
   const id = newId();
   await db.run(

@@ -12,8 +12,9 @@ import CMDB from './pages/CMDB';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Admin from './pages/Admin';
 import Landing from './marketing/Landing';
-import Pricing from './marketing/Pricing';
-import TrialSignup from './marketing/TrialSignup';
+import Software from './marketing/Software';
+import DemoRequest from './marketing/DemoRequest';
+import { Privacy, Terms, Support } from './marketing/Legal';
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
@@ -30,8 +31,14 @@ export default function App() {
     <Routes>
       {/* Public marketing site */}
       <Route path="/" element={<Landing />} />
-      <Route path="/pricing" element={<Pricing />} />
-      <Route path="/start" element={<TrialSignup />} />
+      <Route path="/software" element={<Software />} />
+      {/* /pricing is kept as a stable address (the GovernancePro site links to it) and lands on the pricing section */}
+      <Route path="/pricing" element={<Navigate to="/software#pricing" replace />} />
+      <Route path="/start" element={<DemoRequest />} />
+      <Route path="/demo" element={<Navigate to="/start" replace />} />
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/support" element={<Support />} />
       <Route
         path="/login"
         element={loading ? null : user ? <Navigate to="/dashboard" replace /> : <Login />}
@@ -42,7 +49,7 @@ export default function App() {
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       <Route path="/service-requests" element={<ProtectedRoute><ServiceRequests /></ProtectedRoute>} />
       <Route path="/problems" element={<ProtectedRoute roles={['admin', 'agent']}><Problems /></ProtectedRoute>} />
-      <Route path="/changes" element={<ProtectedRoute><Changes /></ProtectedRoute>} />
+      <Route path="/changes" element={<ProtectedRoute roles={['admin', 'agent']}><Changes /></ProtectedRoute>} />
       <Route path="/cmdb" element={<ProtectedRoute roles={['admin', 'agent']}><CMDB /></ProtectedRoute>} />
       <Route path="/knowledge" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute roles={['admin']}><Admin /></ProtectedRoute>} />

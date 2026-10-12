@@ -29,7 +29,7 @@ export default function Admin() {
         <button onClick={() => setTab('users')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'users' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Users</button>
         <button onClick={() => setTab('sla')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'sla' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>SLA Policies</button>
         <button onClick={() => setTab('catalog')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'catalog' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Service Catalog</button>
-        <button onClick={() => setTab('leads')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'leads' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Trial Leads</button>
+        <button onClick={() => setTab('leads')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'leads' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Demo &amp; waitlist</button>
       </div>
 
       {tab === 'users' && <UsersPanel />}
@@ -40,9 +40,94 @@ export default function Admin() {
   );
 }
 
+function RegistrationCard() {
+  const [open, setOpen] = useState(false);
+  const [domain, setDomain] = useState('');
+  const [state, setState] = useState('loading'); // loading | idle | saving | saved
+  const [error, setError] = useState('');
+  useEffect(() => {
+    client.get('/settings/registration')
+      .then((res) => { setOpen(res.data.open); setDomain(res.data.domain || ''); setState('idle'); })
+      .catch(() => setState('idle'));
+  }, []);
+  async function save() {
+    setState('saving');
+    setError('');
+    try {
+      const res = await client.put('/settings/registration', { open, domain });
+      setOpen(res.data.open);
+      setDomain(res.data.domain || '');
+      setState('saved');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not save this setting.');
+      setState('idle');
+    }
+  }
+  if (state === 'loading') return null;
+  return (
+    <Card className="mb-4 p-4">
+      <div className="mb-1 text-sm font-medium text-ink">Self-registration</div>
+      <p className="mb-3 text-xs text-ink/50">
+        Off (recommended): only administrators can create accounts. On: anyone who can reach this site can create a
+        requester account, optionally limited to one email domain.
+      </p>
+      <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+        <input type="checkbox" checked={open} onChange={(e) => { setOpen(e.target.checked); setState('idle'); }} />
+        Allow people to create their own accounts
+      </label>
+      {open && (
+        <div className="mb-3 max-w-sm">
+          <Input value={domain} onChange={(e) => { setDomain(e.target.value); setState('idle'); }} placeholder="Only this email domain, e.g. acme.co.za (optional)" />
+        </div>
+      )}
+      {error && <div className="mb-2 text-sm text-brick-600">{error}</div>}
+      <Button onClick={save} disabled={state === 'saving'}>{state === 'saving' ? 'Saving…' : 'Save'}</Button>
+      {state === 'saved' && <span className="ml-3 text-xs text-patina-600">Saved</span>}
+    </Card>
+  );
+}
+
+function ResetPasswordModal({ user, onClose }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    try {
+      await client.put(`/users/${user.id}/password`, { password });
+      setDone(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not reset the password.');
+    }
+  }
+  return (
+    <Modal open onClose={onClose} title={`Reset password — ${user.name}`}>
+      {done ? (
+        <div>
+          <p className="mb-4 text-sm text-ink/70">The password for {user.email} was changed. Give them the new password securely and ask them to change it after signing in.</p>
+          <Button onClick={onClose}>Done</Button>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <Field label="New password" hint="At least 8 characters">
+            <Input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          </Field>
+          {error && <div className="mb-3 rounded-md bg-brick-50 px-3 py-2 text-sm text-brick-600">{error}</div>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Reset password</Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
 function UsersPanel() {
   const [users, setUsers] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [resetFor, setResetFor] = useState(null);
 
   const load = useCallback(() => client.get('/users').then((res) => setUsers(res.data)), []);
   useEffect(() => { load(); }, [load]);
@@ -54,6 +139,8 @@ function UsersPanel() {
 
   return (
     <div>
+      <RegistrationCard />
+      {resetFor && <ResetPasswordModal user={resetFor} onClose={() => setResetFor(null)} />}
       <div className="mb-4 flex justify-end">
         <Button onClick={() => setCreateOpen(true)}>+ New user</Button>
       </div>
@@ -73,6 +160,7 @@ function UsersPanel() {
                 Active
               </label>
             </div>
+            <button onClick={() => setResetFor(u)} className="mt-3 text-xs text-patina-600 hover:underline">Reset password</button>
           </Card>
         ))}
       </div>
@@ -87,6 +175,7 @@ function UsersPanel() {
                 <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Active</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -102,6 +191,9 @@ function UsersPanel() {
                   </td>
                   <td className="px-4 py-3">
                     <input type="checkbox" checked={!!u.is_active} onChange={(e) => updateUser(u.id, 'is_active', e.target.checked)} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => setResetFor(u)} className="text-xs text-patina-600 hover:underline">Reset password</button>
                   </td>
                 </tr>
               ))}
@@ -389,7 +481,7 @@ const fmtDay = (s) => parseDay(s).toLocaleDateString('en-GB', { day: 'numeric', 
 const daysUntil = (s) => Math.round((parseDay(s) - parseDay(localToday())) / 86400000);
 const plural = (n) => `${n} day${n === 1 ? '' : 's'}`;
 
-// What the "Trial ends" column shows. Only provisioned workspaces have a running free month.
+// What the "Trial ends" column shows. Only provisioned workspaces have a running one-month pilot.
 function trialInfo(lead) {
   if (lead.status !== 'provisioned') return null;
   if (!lead.trial_ends_at) return { text: 'Set a start date', tone: 'amber' };
@@ -424,7 +516,16 @@ function LeadsPanel() {
     await client.put(`/leads/${id}`, patch);
     load();
   }
-  // Setting "provisioned" starts the free month: today, unless a start date is already recorded.
+  async function exportCsv() {
+    const res = await client.get('/leads/export', { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'demo_and_waitlist_requests.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  // Setting "provisioned" starts the one-month pilot: today, unless a start date is already recorded.
   function changeStatus(lead, status) {
     const patch = { status };
     if (status === 'provisioned' && !lead.provisioned_at) patch.provisioned_at = localToday();
@@ -449,11 +550,16 @@ function LeadsPanel() {
   return (
     <div>
       <p className="mb-4 text-sm text-ink/50">
-        Trial requests submitted from the marketing site's{' '}
+        Demo requests and waitlist sign-ups from the marketing site's{' '}
         <a href="/start" className="text-patina-500 hover:underline" target="_blank" rel="noreferrer">/start</a>{' '}
-        page. Each one needs a workspace set up by hand. Set the status to <strong>provisioned</strong> when it is ready —
-        that starts the free month and shows when it ends.
+        page. Demo requests need a workspace set up by hand. Setting the status to <strong>provisioned</strong> records when it was
+        ready and shows when a one-month pilot period would end. This is internal tracking only: nothing is advertised, billed or
+        switched off automatically.
       </p>
+
+      <div className="mb-4">
+        <button onClick={exportCsv} className="rounded-md border border-stone-200 px-3 py-1.5 text-xs font-medium text-ink/70 hover:bg-stone-50">Export CSV</button>
+      </div>
 
       {needsAttention.length > 0 && (
         <div className="mb-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-600">
@@ -477,7 +583,7 @@ function LeadsPanel() {
                 <div className="mb-3 text-xs text-ink/50">
                   {l.plan && <span className="capitalize">{l.plan} plan</span>}
                   {l.team_size && <span> · {l.team_size} agents</span>}
-                  {l.region && <span> · {l.region}</span>}
+                  <span> · {l.kind === 'waitlist' ? 'waitlist' : 'demo'}</span>{l.consent ? <span> · consent given</span> : null}
                 </div>
                 <Select value={l.status} onChange={(e) => changeStatus(l, e.target.value)} className="!w-auto py-1 text-xs">
                   {LEAD_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -499,7 +605,7 @@ function LeadsPanel() {
                     <th className="px-4 py-3">Contact</th>
                     <th className="px-4 py-3">Plan</th>
                     <th className="px-4 py-3">Team size</th>
-                    <th className="px-4 py-3">Region</th>
+                    <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Submitted</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Trial ends</th>
@@ -512,10 +618,11 @@ function LeadsPanel() {
                       <td className="px-4 py-3 text-ink/70">
                         <div>{l.name}</div>
                         <div className="text-xs text-ink/40">{l.email}</div>
+                        {l.message && <div className="mt-1 max-w-xs truncate text-xs italic text-ink/50" title={l.message}>“{l.message}”</div>}
                       </td>
                       <td className="px-4 py-3 capitalize text-ink/70">{l.plan || '—'}</td>
                       <td className="px-4 py-3 text-ink/70">{l.team_size || '—'}</td>
-                      <td className="px-4 py-3 capitalize text-ink/70">{l.region || '—'}</td>
+                      <td className="px-4 py-3 capitalize text-ink/70">{l.kind || 'demo'}{l.consent ? <div className="text-xs normal-case text-ink/40">consent given</div> : null}</td>
                       <td className="px-4 py-3 text-xs text-ink/50">{new Date(l.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                       <td className="px-4 py-3">
                         <Select value={l.status} onChange={(e) => changeStatus(l, e.target.value)} className="!w-auto py-1">
