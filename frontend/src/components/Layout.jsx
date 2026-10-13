@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/changes', label: 'Changes', icon: '▣', roles: ['admin', 'agent'] },
   { to: '/cmdb', label: 'CMDB', icon: '▦', roles: ['admin', 'agent'] },
   { to: '/knowledge', label: 'Knowledge Base', icon: '▤', roles: ['admin', 'agent', 'requester'] },
+  { to: '/reports', label: 'Reports', icon: '◩', roles: ['admin', 'agent'] },
   { to: '/admin', label: 'Administration', icon: '⚙', roles: ['admin'] },
 ];
 

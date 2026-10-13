@@ -30,6 +30,17 @@ components:
       bearerFormat: JWT
 
   schemas:
+    SlaSettings:
+      type: object
+      required: [offset, days, start, end, holidays, atRiskPct, raisePriority]
+      properties:
+        offset: { type: integer, description: 'UTC offset in minutes, steps of 15 (South Africa = 120)' }
+        days: { type: array, items: { type: integer, minimum: 0, maximum: 6 }, description: 'Working weekdays, 0 = Sunday' }
+        start: { type: string, example: '08:00' }
+        end: { type: string, example: '17:00' }
+        holidays: { type: array, items: { type: string, format: date }, description: 'No working time on these dates' }
+        atRiskPct: { type: integer, minimum: 1, maximum: 99, description: 'A ticket is at risk once this % of its resolution time is used' }
+        raisePriority: { type: boolean, description: 'Raise the priority one level when a resolution target is breached' }
     User:
       type: object
       properties:
@@ -336,6 +347,7 @@ paths:
                 description: { type: string }
                 category: { type: string }
                 priority: { type: string, enum: [P1, P2, P3, P4] }
+                use_business_hours: { type: boolean, description: 'Count working hours only (default false: round the clock)' }
                 impact: { type: string }
                 urgency: { type: string }
                 ci_id: { type: string }
@@ -886,6 +898,44 @@ paths:
       responses:
         '201': { description: Created policy, content: { application/json: { schema: { $ref: '#/components/schemas/SlaPolicy' } } } }
 
+  /sla/settings:
+    get:
+      tags: [SLA Policies]
+      summary: Working hours, holidays and alert behaviour (admin and agent)
+      responses:
+        '200':
+          description: The current configuration
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SlaSettings' }
+    put:
+      tags: [SLA Policies]
+      summary: Change working hours, holidays and alert behaviour (admin only)
+      description: Applies to tickets created from now on; existing tickets keep their due dates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlaSettings' }
+      responses:
+        '200': { description: Saved; returns the stored configuration }
+        '400': { description: A field is invalid (days, times, offset, holidays, atRiskPct or raisePriority) }
+        '403': { description: Administrators only }
+  /sla/report:
+    get:
+      tags: [SLA Policies]
+      summary: Service report - SLA attainment and response/resolution times (admin and agent)
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: 'Tickets created on or after this date' }
+        - { name: to, in: query, schema: { type: string, format: date }, description: 'Tickets created on or before this date' }
+      responses:
+        '200':
+          description: Overall figures, then by priority and by ticket type
+          content:
+            application/json:
+              schema: { type: object }
+        '400': { description: Malformed date }
+        '403': { description: Requesters cannot read reports }
   /sla/{id}:
     put:
       tags: [SLA Policies]

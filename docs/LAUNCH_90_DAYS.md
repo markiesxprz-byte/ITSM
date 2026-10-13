@@ -12,6 +12,8 @@ export; requesters see only their own tickets and are not billed as agents; Star
 online billing, a free trial (see §8), uptime guarantees, certifications, customer counts or testimonials. Professional
 (R349) and MSP (R549) are **waitlist only**.
 
+*Status note:* SLA targets, breach alerts, escalation and reporting are now built and tested locally, but until they are deployed and verified in production, and plan limits exist, **keep Professional as "Coming soon"** and keep the claims rule above.
+
 ## 2. Target customers
 | Profile | Pain | Fit today |
 |---|---|---|

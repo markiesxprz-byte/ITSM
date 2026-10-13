@@ -3,6 +3,7 @@ import client from '../api/client';
 import { downloadCsv } from '../api/downloadCsv';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge, PriorityBadge, TicketNumber } from '../components/Badge';
+import { SlaBadge } from '../components/SlaBadge';
 import { Button, Field, Input, Textarea, Select, EmptyState, Card } from '../components/ui';
 import Modal from '../components/Modal';
 
@@ -89,6 +90,7 @@ export default function ServiceRequests() {
                     <th className="px-4 py-3">Title</th>
                     <th className="px-4 py-3">Priority</th>
                     <th className="px-4 py-3">Status</th>
+                    {isStaff && <th className="px-4 py-3">SLA</th>}
                     <th className="px-4 py-3">Updated</th>
                   </tr>
                 </thead>
@@ -99,6 +101,7 @@ export default function ServiceRequests() {
                       <td className="px-4 py-3 font-medium text-ink">{r.title}</td>
                       <td className="px-4 py-3"><PriorityBadge priority={r.priority} /></td>
                       <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                      {isStaff && <td className="px-4 py-3"><SlaBadge sla={r.sla} /></td>}
                       <td className="px-4 py-3 text-xs text-ink/50">{new Date(r.updated_at).toLocaleString()}</td>
                     </tr>
                   ))}

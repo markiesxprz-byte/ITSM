@@ -21,8 +21,8 @@ const DEFAULT_SLA = {
 
 export async function getSla(db, appliesTo, priority) {
   const p = await db.get('SELECT * FROM sla_policies WHERE applies_to = ? AND priority = ?', appliesTo, priority);
-  if (p) return { response: p.response_time_mins, resolution: p.resolution_time_mins };
-  return DEFAULT_SLA[priority] || DEFAULT_SLA.P3;
+  if (p) return { response: p.response_time_mins, resolution: p.resolution_time_mins, business: !!p.use_business_hours };
+  return { ...(DEFAULT_SLA[priority] || DEFAULT_SLA.P3), business: false };
 }
 
 export async function audit(db, entityType, entityId, action, userId, details) {

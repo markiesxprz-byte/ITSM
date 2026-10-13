@@ -15,6 +15,7 @@ import Landing from './marketing/Landing';
 import Software from './marketing/Software';
 import DemoRequest from './marketing/DemoRequest';
 import { Privacy, Terms, Support } from './marketing/Legal';
+import Reports from './pages/Reports';
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
@@ -52,6 +53,7 @@ export default function App() {
       <Route path="/changes" element={<ProtectedRoute roles={['admin', 'agent']}><Changes /></ProtectedRoute>} />
       <Route path="/cmdb" element={<ProtectedRoute roles={['admin', 'agent']}><CMDB /></ProtectedRoute>} />
       <Route path="/knowledge" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
+      <Route path="/reports" element={<ProtectedRoute roles={['admin', 'agent']}><Reports /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute roles={['admin']}><Admin /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />

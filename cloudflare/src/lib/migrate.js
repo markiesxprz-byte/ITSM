@@ -54,6 +54,31 @@ const MIGRATIONS = [
       await db.run('CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at)');
     },
   },
+
+  // v5: SLA management — business hours, pause on hold, breach tracking. All additive; existing tickets keep their
+  // due dates and behave exactly as before (a missing sla_mode means 'calendar', i.e. 24x7).
+  {
+    version: 5,
+    run: async (db) => {
+      const add = async (table, col, type) => {
+        const has = await db.get(`SELECT COUNT(*) AS c FROM pragma_table_info('${table}') WHERE name = ?`, col);
+        if (has.c) return;
+        try { await db.run(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`); }
+        catch (err) { if (!/duplicate column/i.test(String(err && err.message))) throw err; }
+      };
+      for (const table of ['incidents', 'service_requests']) {
+        await add(table, 'sla_mode', 'TEXT');                       // 'calendar' | 'business', fixed when the ticket is created
+        await add(table, 'sla_paused_at', 'TEXT');                  // set while the ticket is on hold: the clock is stopped
+        await add(table, 'sla_hold_mins', 'INTEGER NOT NULL DEFAULT 0'); // minutes of hold already credited, in the ticket's own mode
+        await add(table, 'sla_warned_at', 'TEXT');                  // "at risk" alert sent
+        await add(table, 'sla_resp_breached_at', 'TEXT');           // response-breach alert sent
+        await add(table, 'sla_res_breached_at', 'TEXT');            // resolution-breach alert sent
+        await add(table, 'sla_escalated_at', 'TEXT');               // escalated when the resolution target was breached
+      }
+      await add('service_requests', 'responded_at', 'TEXT');        // incidents already had it
+      await add('sla_policies', 'use_business_hours', 'INTEGER NOT NULL DEFAULT 0');
+    },
+  },
 ];
 
 // D1 batches take one statement per entry, so strip SQL comments and split on ';'.

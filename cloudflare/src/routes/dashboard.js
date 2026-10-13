@@ -19,9 +19,9 @@ r.get('/summary', async (c) => {
 
   const [incOpen, incBreached, srOpen, srBreached] = await Promise.all([
     n(`SELECT COUNT(*) AS c FROM incidents WHERE status NOT IN ('resolved','closed')${scope}`, ...sp),
-    n(`SELECT COUNT(*) AS c FROM incidents WHERE status NOT IN ('resolved','closed') AND sla_resolution_due < ?${scope}`, now, ...sp),
+    n(`SELECT COUNT(*) AS c FROM incidents WHERE status NOT IN ('resolved','closed') AND sla_paused_at IS NULL AND sla_resolution_due < ?${scope}`, now, ...sp),
     n(`SELECT COUNT(*) AS c FROM service_requests WHERE status NOT IN ('fulfilled','closed','rejected')${scope}`, ...sp),
-    n(`SELECT COUNT(*) AS c FROM service_requests WHERE status NOT IN ('fulfilled','closed','rejected') AND sla_resolution_due < ?${scope}`, now, ...sp),
+    n(`SELECT COUNT(*) AS c FROM service_requests WHERE status NOT IN ('fulfilled','closed','rejected') AND sla_paused_at IS NULL AND sla_resolution_due < ?${scope}`, now, ...sp),
   ]);
   const [iStatus, iPrio, sStatus] = await Promise.all([
     countBy('incidents', 'status'), countBy('incidents', 'priority'), countBy('service_requests', 'status'),

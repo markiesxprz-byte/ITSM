@@ -87,6 +87,21 @@ The public pages are `/` (home), `/software` (the SaaS landing page: capabilitie
 
 **Before this goes live you must supply:** a monitored support email or phone (`siteConfig.js`), the organisation's legal name and an Information Officer for the privacy notice, and a lawyer's review of the privacy notice and terms (the pages say they have not been reviewed).
 
+## SLA management (built and tested locally; not yet verified in production)
+
+- **Policies** (Administration → SLA Policies): response and resolution targets per ticket type and priority. Each policy either counts **round the clock** or **working hours only**, and policies can now be edited.
+- **Working hours, holidays and alerts** (same screen): working days, opening and closing time, a UTC offset (South Africa is +02:00, with no daylight saving), public holidays, the "at risk" percentage (default 80%), and an optional "raise priority when breached".
+- **How time is counted:** in working-hours mode, only minutes inside the configured hours on working days count; a ticket that arrives out of hours starts counting at the next opening. The counting mode is fixed when a ticket is created.
+- **Clock pause:** moving a ticket to *On hold* stops its clock. When it leaves On hold, the time held is credited by pushing the unfinished due dates back. Changing a ticket's priority recalculates its due dates from its creation time.
+- **First response:** the first *public* reply from staff (or moving the ticket to in-progress). Internal notes and the requester's own comments do not count.
+- **States:** on track, at risk, breached, paused, met. Staff see them as badges in the incident and service-request lists and a "Service level" block in the ticket. **Requesters never see SLA state or the internal bookkeeping.**
+- **Alerts and escalation:** a Cron Trigger runs every five minutes (`wrangler.jsonc`). It emails the assignee when a ticket is at risk, and the assignee and every administrator when a response or resolution target is breached, once per event. A paused ticket is never alerted. Without `RESEND_API_KEY`, emails are logged instead of sent.
+- **Reports** (Reports in the menu; admin and agent): attainment %, average first response and resolution, by priority and by type, for a date range.
+
+**Limits:** a priority raised by escalation does not recalculate due dates; the counting mode of an existing ticket does not change if the policy changes; average times are calendar minutes (including time on hold); there is no multi-timezone support per customer; emails depend on a configured Resend key.
+
+Tests: `node cloudflare/scripts/sla.test.mjs` (36 time-maths checks), `bash cloudflare/scripts/sla-check.sh` (77 API and scheduled-job checks), `python3 cloudflare/scripts/sla-browser.py` (37 screen checks).
+
 ## API documentation
 `/api/docs` serves interactive Swagger UI (loaded from a public CDN) for every endpoint; the raw spec is at `/api/openapi.yaml`.
 

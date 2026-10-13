@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { newId, nextNumber, nowIso, getSla, addMinutesIso, audit, body, fire } from '../lib/helpers.js';
+import { newId, nextNumber, nowIso, audit, body, fire } from '../lib/helpers.js';
+import { loadSlaConfig, slaForNewTicket, slaOnUpdate, withSla, forRequester, forUser, REQUEST_DONE } from '../lib/slaengine.js';
 import { authRequired, requireRole } from '../lib/auth.js';
 import { csvResponse } from '../lib/csv.js';
 import { makeNotifier } from '../lib/mail.js';
@@ -55,7 +56,10 @@ r.get('/', async (c) => {
   if (q) { sql += ' AND (title LIKE ? OR number LIKE ?)'; p.push(`%${q}%`, `%${q}%`); }
   if (user.role === 'requester') { sql += ' AND requester_id = ?'; p.push(user.id); }
   sql += ' ORDER BY created_at DESC';
-  return c.json(await c.get('db').all(sql, ...p));
+  const rows = await c.get('db').all(sql, ...p);
+  if (user.role === 'requester') return c.json(rows.map(forRequester));
+  const cfg = await loadSlaConfig(c.get('db')), nowMs = Date.now();
+  return c.json(rows.map((row) => withSla(row, nowMs, cfg, REQUEST_DONE)));
 });
 
 r.get('/:id', async (c) => {
@@ -67,7 +71,9 @@ r.get('/:id', async (c) => {
   const comments = await db.all('SELECT * FROM comments WHERE ticket_type = ? AND ticket_id = ? ORDER BY created_at', 'service_request', sr.id);
   // Internal notes are for staff only — never return them to requesters.
   const visible = c.get('user').role === 'requester' ? comments.filter((x) => !x.is_internal) : comments;
-  return c.json({ ...sr, comments: visible });
+  const out = { ...forUser(sr, user), comments: visible };
+  if (user.role !== 'requester') out.sla = withSla(sr, Date.now(), await loadSlaConfig(db), REQUEST_DONE).sla;
+  return c.json(out);
 });
 
 r.post('/', async (c) => {
@@ -88,19 +94,19 @@ r.post('/', async (c) => {
   const id = newId();
   const number = await nextNumber(db, 'SR', 'service_requests');
   const prio = b.priority || 'P3';
-  const sla = await getSla(db, 'service_request', prio);
   const now = nowIso();
+  const sla = await slaForNewTicket(db, 'service_request', prio, now, await loadSlaConfig(db));
   await db.run(
     `INSERT INTO service_requests (id, number, title, description, catalog_item_id, priority, status, requester_id,
-       approval_status, sla_response_due, sla_resolution_due, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       approval_status, sla_response_due, sla_resolution_due, sla_mode, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, number, b.title, b.description || null, b.catalog_item_id || null, prio,
     requiresApproval ? 'pending_approval' : 'new', user.id, requiresApproval ? 'pending' : 'not_required',
-    addMinutesIso(sla.response), addMinutesIso(sla.resolution), now, now
+    sla.sla_response_due, sla.sla_resolution_due, sla.sla_mode, now, now
   );
   await audit(db, 'service_request', id, 'created', user.id, { number, requiresApproval });
   fire(c, makeNotifier(c).ticketCreated({ to: user.email, name: user.name, ticketType: 'service_request', number, title: b.title }));
-  return c.json(await db.get('SELECT * FROM service_requests WHERE id = ?', id), 201);
+  return c.json(forUser(await db.get('SELECT * FROM service_requests WHERE id = ?', id), user), 201);
 });
 
 r.put('/:id', requireRole('admin', 'agent'), async (c) => {
@@ -120,12 +126,14 @@ r.put('/:id', requireRole('admin', 'agent'), async (c) => {
   const updates = {};
   for (const f of ['title', 'description', 'priority', 'assigned_to', 'status']) if (b[f] !== undefined) updates[f] = b[f];
   const now = nowIso();
-  let resolvedAt = sr.resolved_at;
+  let resolvedAt = sr.resolved_at, respondedAt = sr.responded_at;
   if (updates.status === 'fulfilled' && !resolvedAt) resolvedAt = now;
+  if (['approved', 'in_progress', 'fulfilled'].includes(updates.status) && !respondedAt) respondedAt = now;
   const m = { ...sr, ...updates };
+  const s = await slaOnUpdate(db, 'service_request', sr, { status: m.status, priority: m.priority, responded: !!respondedAt, resolved: !!resolvedAt }, now, await loadSlaConfig(db));
   await db.run(
-    `UPDATE service_requests SET title=?, description=?, priority=?, assigned_to=?, status=?, resolved_at=?, updated_at=? WHERE id=?`,
-    m.title, m.description, m.priority, m.assigned_to, m.status, resolvedAt, now, id
+    `UPDATE service_requests SET title=?, description=?, priority=?, assigned_to=?, status=?, resolved_at=?, responded_at=?, sla_response_due=?, sla_resolution_due=?, updated_at=? WHERE id=?`,
+    m.title, m.description, m.priority, m.assigned_to, m.status, resolvedAt, respondedAt, s.sla_response_due, s.sla_resolution_due, now, id
   );
   await audit(db, 'service_request', id, 'updated', user.id, updates);
   const n = makeNotifier(c);
@@ -172,6 +180,9 @@ r.post('/:id/comments', async (c) => {
     `INSERT INTO comments (id, ticket_type, ticket_id, user_id, content, is_internal, created_at) VALUES (?, 'service_request', ?, ?, ?, ?, ?)`,
     id, sr.id, user.id, content, is_internal ? 1 : 0, nowIso()
   );
+  if (!is_internal && user.role !== 'requester' && !sr.responded_at) {
+    await db.run('UPDATE service_requests SET responded_at = ? WHERE id = ? AND responded_at IS NULL', nowIso(), sr.id);
+  }
   if (!is_internal) {
     const target = user.id === sr.requester_id ? sr.assigned_to : sr.requester_id;
     if (target) {

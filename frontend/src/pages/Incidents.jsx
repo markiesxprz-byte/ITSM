@@ -3,6 +3,7 @@ import client from '../api/client';
 import { downloadCsv } from '../api/downloadCsv';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge, PriorityBadge, TicketNumber } from '../components/Badge';
+import { SlaBadge, SlaDetail } from '../components/SlaBadge';
 import { Button, Field, Input, Textarea, Select, EmptyState, Card } from '../components/ui';
 import Modal from '../components/Modal';
 
@@ -88,6 +89,7 @@ export default function Incidents() {
                   <StatusBadge status={inc.status} />
                   <span className="text-xs text-ink/40">{new Date(inc.updated_at).toLocaleDateString()}</span>
                 </div>
+                {inc.sla && <div className="mt-2"><SlaBadge sla={inc.sla} /></div>}
               </Card>
             ))}
           </div>
@@ -102,6 +104,7 @@ export default function Incidents() {
                     <th className="px-4 py-3">Title</th>
                     <th className="px-4 py-3">Priority</th>
                     <th className="px-4 py-3">Status</th>
+                    {isStaff && <th className="px-4 py-3">SLA</th>}
                     <th className="px-4 py-3">Updated</th>
                   </tr>
                 </thead>
@@ -116,6 +119,7 @@ export default function Incidents() {
                       <td className="px-4 py-3 font-medium text-ink">{inc.title}</td>
                       <td className="px-4 py-3"><PriorityBadge priority={inc.priority} /></td>
                       <td className="px-4 py-3"><StatusBadge status={inc.status} /></td>
+                      {isStaff && <td className="px-4 py-3"><SlaBadge sla={inc.sla} /></td>}
                       <td className="px-4 py-3 text-xs text-ink/50">{new Date(inc.updated_at).toLocaleString()}</td>
                     </tr>
                   ))}
@@ -206,8 +210,9 @@ function IncidentDetailModal({ incident, isStaff, agents, onClose, onUpdated }) 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <PriorityBadge priority={incident.priority} />
         <StatusBadge status={incident.status} />
-        <span className="text-xs text-ink/40">SLA resolution due {new Date(incident.sla_resolution_due).toLocaleString()}</span>
+        {!incident.sla && <span className="text-xs text-ink/40">Target resolution {new Date(incident.sla_resolution_due).toLocaleString()}</span>}
       </div>
+      {incident.sla && <SlaDetail sla={incident.sla} />}
 
       {incident.description && <p className="mb-5 text-sm text-ink/80">{incident.description}</p>}
 

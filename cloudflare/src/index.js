@@ -17,6 +17,7 @@ import sla from './routes/sla.js';
 import dashboard from './routes/dashboard.js';
 import leads from './routes/leads.js';
 import settings from './routes/settings.js';
+import { runSlaChecks } from './lib/slacheck.js';
 
 // Only /api/* reaches this Worker (see "run_worker_first" in wrangler.jsonc).
 // Everything else — the marketing site and the React app — is served straight from
@@ -73,4 +74,10 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error' }, 500);
 });
 
-export default app;
+// A Cron Trigger (see wrangler.jsonc) runs the SLA checker every five minutes.
+export default {
+  fetch: app.fetch,
+  scheduled: (event, env, ctx) => {
+    ctx.waitUntil(runSlaChecks(env).then((r) => console.log('[sla-check]', JSON.stringify(r))).catch((e) => console.error('[sla-check] failed:', e && e.message)));
+  },
+};

@@ -20,5 +20,8 @@
   // Lets the Worker import openapi.yaml and schema.sql as text.
   "rules": [{ "type": "Text", "globs": ["**/*.yaml", "**/*.sql"], "fallthrough": true }],
 
+  // Checks SLA targets every five minutes (at-risk and breach alerts, escalation). Cron Triggers are available on the free plan.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
   "observability": { "enabled": true }
 }

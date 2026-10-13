@@ -22,12 +22,19 @@ async function sendMail(env, { to, subject, text }) {
 const label = (s) => String(s).replace(/_/g, ' ');
 
 export function makeNotifier(c) {
-  const env = c.env;
-  const appUrl = env.APP_URL || new URL(c.req.url).origin;
+  return makeNotifierFromEnv(c.env, c.env.APP_URL || new URL(c.req.url).origin);
+}
+
+// The scheduled SLA job has no incoming request, so it builds the notifier from the environment alone.
+export function makeNotifierFromEnv(env, appUrl) {
   const sig = '— Infovantage ITSM Service Desk';
   const hi = (n) => `Hi ${n || ''},\n\n`;
   return {
     sendMail: (m) => sendMail(env, m),
+    slaAtRisk: ({ to, name, ticketType, number, title, remaining }) =>
+      sendMail(env, { to, subject: `[${number}] SLA at risk`, text: `${hi(name)}${label(ticketType)} ${number} — "${title}" — is at risk of breaching its resolution target (about ${remaining} minutes left).\n\nView it: ${appUrl || 'sign in to your service desk'}\n\n${sig}` }),
+    slaBreached: ({ to, name, ticketType, number, title, what, escalated }) =>
+      sendMail(env, { to, subject: `[${number}] SLA breached: ${what}`, text: `${hi(name)}${label(ticketType)} ${number} — "${title}" — has breached its ${what} target.${escalated ? ' It has been escalated.' : ''}\n\nView it: ${appUrl || 'sign in to your service desk'}\n\n${sig}` }),
     ticketCreated: ({ to, name, ticketType, number, title }) =>
       sendMail(env, { to, subject: `[${number}] ${title}`, text: `${hi(name)}Your ${label(ticketType)} ${number} — "${title}" — has been logged.\n\nView it: ${appUrl}\n\n${sig}` }),
     assigned: ({ to, name, ticketType, number, title }) =>

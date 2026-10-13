@@ -261,11 +261,13 @@ function CreateUserModal({ open, onClose, onCreated }) {
 function SlaPanel() {
   const [policies, setPolicies] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const load = useCallback(() => client.get('/sla').then((res) => setPolicies(res.data)), []);
   useEffect(() => { load(); }, [load]);
 
   return (
     <div>
+      <SlaSettingsCard />
       <div className="mb-4 flex justify-end">
         <Button onClick={() => setCreateOpen(true)}>+ New policy</Button>
       </div>
@@ -278,10 +280,12 @@ function SlaPanel() {
               <span className="text-xs font-semibold text-ink/60">{p.priority}</span>
             </div>
             <div className="mb-2 text-xs capitalize text-ink/50">{p.applies_to.replace('_', ' ')}</div>
-            <div className="flex gap-4 text-xs text-ink/70">
+            <div className="flex flex-wrap gap-4 text-xs text-ink/70">
               <span>Response: {p.response_time_mins}m</span>
               <span>Resolution: {p.resolution_time_mins}m</span>
+              <span>{p.use_business_hours ? 'Working hours' : 'Round the clock'}</span>
             </div>
+            <div className="mt-2"><Button variant="secondary" onClick={() => setEditing(p)}>Edit</Button></div>
           </Card>
         ))}
       </div>
@@ -296,6 +300,8 @@ function SlaPanel() {
                 <th className="px-4 py-3">Priority</th>
                 <th className="px-4 py-3">Response (min)</th>
                 <th className="px-4 py-3">Resolution (min)</th>
+                <th className="px-4 py-3">Counted</th>
+                <th className="px-4 py-3"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -306,6 +312,8 @@ function SlaPanel() {
                   <td className="px-4 py-3">{p.priority}</td>
                   <td className="px-4 py-3">{p.response_time_mins}</td>
                   <td className="px-4 py-3">{p.resolution_time_mins}</td>
+                  <td className="px-4 py-3">{p.use_business_hours ? 'Working hours only' : 'Round the clock'}</td>
+                  <td className="px-4 py-3 text-right"><Button variant="secondary" onClick={() => setEditing(p)}>Edit<span className="sr-only"> {p.name}</span></Button></td>
                 </tr>
               ))}
             </tbody>
@@ -313,12 +321,127 @@ function SlaPanel() {
         </div>
       </Card>
       <CreateSlaModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); load(); }} />
+      {editing && <EditSlaModal policy={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </div>
   );
 }
 
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const OFFSETS = [[-480, 'UTC−08:00'], [-300, 'UTC−05:00'], [0, 'UTC+00:00 (London winter)'], [60, 'UTC+01:00'], [120, 'UTC+02:00 (South Africa)'], [180, 'UTC+03:00'], [240, 'UTC+04:00 (Dubai)'], [330, 'UTC+05:30 (India)'], [480, 'UTC+08:00'], [600, 'UTC+10:00']];
+
+// Working hours, holidays and alert behaviour. Policies marked "working hours" count only the time in here.
+function SlaSettingsCard() {
+  const [cfg, setCfg] = useState(null);
+  const [holiday, setHoliday] = useState('');
+  const [msg, setMsg] = useState({ kind: '', text: '' });
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { client.get('/sla/settings').then((res) => setCfg(res.data)); }, []);
+  if (!cfg) return null;
+
+  const toggleDay = (d) => setCfg({ ...cfg, days: cfg.days.includes(d) ? cfg.days.filter((x) => x !== d) : [...cfg.days, d].sort() });
+  const addHoliday = () => { if (holiday && !cfg.holidays.includes(holiday)) setCfg({ ...cfg, holidays: [...cfg.holidays, holiday].sort() }); setHoliday(''); };
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true); setMsg({ kind: '', text: '' });
+    try {
+      const res = await client.put('/sla/settings', cfg);
+      setCfg(res.data); setMsg({ kind: 'ok', text: 'Saved. New tickets use these hours straight away; existing tickets keep their due dates.' });
+    } catch (err) {
+      setMsg({ kind: 'err', text: err.response?.data?.error || 'Could not save.' });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Card className="mb-6 p-5">
+      <h3 className="font-display text-lg font-semibold text-ink">Working hours and alerts</h3>
+      <p className="mb-4 text-sm text-ink/60">Policies marked “working hours” count only the time below. Weekends and holidays are skipped, and a ticket that arrives after hours starts counting at the next opening.</p>
+      <form onSubmit={save}>
+        <fieldset className="mb-4">
+          <legend className="mb-1.5 text-sm font-medium text-ink">Working days</legend>
+          <div className="flex flex-wrap gap-3">
+            {DAY_NAMES.map((n, d) => (
+              <label key={n} className="flex items-center gap-1.5 text-sm text-ink/80">
+                <input type="checkbox" checked={cfg.days.includes(d)} onChange={() => toggleDay(d)} /> {n}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Opens"><Input type="time" required value={cfg.start} onChange={(e) => setCfg({ ...cfg, start: e.target.value })} /></Field>
+          <Field label="Closes"><Input type="time" required value={cfg.end} onChange={(e) => setCfg({ ...cfg, end: e.target.value })} /></Field>
+          <Field label="Time zone">
+            <Select value={cfg.offset} onChange={(e) => setCfg({ ...cfg, offset: Number(e.target.value) })}>
+              {OFFSETS.some(([v]) => v === cfg.offset) ? null : <option value={cfg.offset}>{`UTC offset ${cfg.offset} min`}</option>}
+              {OFFSETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <Field label="Public holidays (no working time on these dates)">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input type="date" value={holiday} onChange={(e) => setHoliday(e.target.value)} />
+            <Button type="button" variant="secondary" onClick={addHoliday}>Add date</Button>
+          </div>
+          {cfg.holidays.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {cfg.holidays.map((h) => (
+                <li key={h} className="flex items-center gap-1 rounded-full bg-stone-200 px-3 py-1 text-xs text-ink/80">
+                  {h}
+                  <button type="button" aria-label={`Remove ${h}`} onClick={() => setCfg({ ...cfg, holidays: cfg.holidays.filter((x) => x !== h) })} className="ml-1 text-ink/50 hover:text-ink">×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Warn when this % of the resolution time has been used">
+            <Input type="number" min="1" max="99" required value={cfg.atRiskPct} onChange={(e) => setCfg({ ...cfg, atRiskPct: Number(e.target.value) })} />
+          </Field>
+          <label className="mt-6 flex items-start gap-2 text-sm text-ink/80">
+            <input type="checkbox" className="mt-1" checked={cfg.raisePriority} onChange={(e) => setCfg({ ...cfg, raisePriority: e.target.checked })} />
+            <span>When a resolution target is breached, also raise the ticket’s priority by one level (the assignee and every administrator are always alerted).</span>
+          </label>
+        </div>
+        {msg.text && <div role={msg.kind === 'err' ? 'alert' : 'status'} className={`mt-3 rounded-md px-3 py-2 text-sm ${msg.kind === 'err' ? 'bg-brick-50 text-brick-600' : 'bg-patina-100 text-patina-700'}`}>{msg.text}</div>}
+        <div className="mt-4 flex justify-end"><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save working hours'}</Button></div>
+      </form>
+    </Card>
+  );
+}
+
+function EditSlaModal({ policy, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: policy.name, response_time_mins: policy.response_time_mins, resolution_time_mins: policy.resolution_time_mins, use_business_hours: !!policy.use_business_hours });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  async function submit(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try { await client.put(`/sla/${policy.id}`, form); onSaved(); }
+    catch (err) { setError(err.response?.data?.error || 'Could not save.'); }
+    finally { setSaving(false); }
+  }
+  return (
+    <Modal open onClose={onClose} title={`Edit ${policy.name}`}>
+      <form onSubmit={submit}>
+        <Field label="Name"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Response time (minutes)"><Input type="number" min="1" required value={form.response_time_mins} onChange={(e) => setForm({ ...form, response_time_mins: Number(e.target.value) })} /></Field>
+          <Field label="Resolution time (minutes)"><Input type="number" min="1" required value={form.resolution_time_mins} onChange={(e) => setForm({ ...form, resolution_time_mins: Number(e.target.value) })} /></Field>
+        </div>
+        <label className="mb-2 flex items-start gap-2 text-sm text-ink/80">
+          <input type="checkbox" className="mt-1" checked={form.use_business_hours} onChange={(e) => setForm({ ...form, use_business_hours: e.target.checked })} />
+          <span>Count working hours only (otherwise the clock runs round the clock). Applies to tickets created from now on.</span>
+        </label>
+        {error && <div role="alert" className="mb-2 rounded-md bg-brick-50 px-3 py-2 text-sm text-brick-600">{error}</div>}
+        <div className="mt-2 flex justify-end gap-2">
+          <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save policy'}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function CreateSlaModal({ open, onClose, onCreated }) {
-  const [form, setForm] = useState({ name: '', applies_to: 'incident', priority: 'P1', response_time_mins: 15, resolution_time_mins: 240 });
+  const [form, setForm] = useState({ name: '', applies_to: 'incident', priority: 'P1', response_time_mins: 15, resolution_time_mins: 240, use_business_hours: false });
   const [saving, setSaving] = useState(false);
 
   async function submit(e) {
@@ -359,6 +482,10 @@ function CreateSlaModal({ open, onClose, onCreated }) {
             <Input type="number" min="1" required value={form.resolution_time_mins} onChange={(e) => setForm({ ...form, resolution_time_mins: Number(e.target.value) })} />
           </Field>
         </div>
+        <label className="mb-2 flex items-start gap-2 text-sm text-ink/80">
+          <input type="checkbox" className="mt-1" checked={form.use_business_hours} onChange={(e) => setForm({ ...form, use_business_hours: e.target.checked })} />
+          <span>Count working hours only (otherwise the clock runs round the clock).</span>
+        </label>
         <div className="mt-2 flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save policy'}</Button>

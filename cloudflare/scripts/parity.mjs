@@ -3,9 +3,15 @@
 const BASE = process.argv[2];
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g;
+// "Today" and "today plus one calendar month" are dates the server writes itself (a workspace marked as provisioned).
+// Normalise them, or this baseline would fail on any day other than the one it was recorded on.
+const TODAY = new Date().toISOString().slice(0, 10);
+const PLUS_MONTH = (() => { const [y, m, d] = TODAY.split('-').map(Number); const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1; return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, new Date(Date.UTC(ny, nm, 0)).getUTCDate())).padStart(2, '0')}`; })();
 const norm = (v) => {
   if (Array.isArray(v)) return v.map(norm);
   if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((k) => [k, norm(v[k])]));
+  if (v === TODAY) return '<today>';
+  if (v === PLUS_MONTH) return '<today+1m>';
   if (typeof v === 'string') return v.replace(UUID, '<id>').replace(ISO, '<ts>');
   return v;
 };
