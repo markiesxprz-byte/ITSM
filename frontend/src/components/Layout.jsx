@@ -59,6 +59,18 @@ function ChangePasswordModal({ onClose }) {
   );
 }
 
+// Shown to everyone signed in when the workspace is read-only because the subscription has lapsed.
+function AccessBanner() {
+  const [a, setA] = useState(null);
+  useEffect(() => { client.get('/billing/access').then((res) => setA(res.data)).catch(() => {}); }, []);
+  if (!a || !a.enforce || a.writable) return null;
+  return (
+    <div role="alert" className="mb-5 rounded-md bg-brick-50 px-4 py-3 text-sm text-brick-600">
+      <strong>This workspace is read-only.</strong> Its subscription is no longer in good standing. You can still read and export tickets, but cannot change them. Ask an administrator to open Administration → Billing.
+    </div>
+  );
+}
+
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -175,7 +187,7 @@ export default function Layout({ children }) {
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:px-8 md:py-8">{children}</div>
+          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 md:px-8 md:py-8"><AccessBanner />{children}</div>
         </main>
       </div>
     </div>

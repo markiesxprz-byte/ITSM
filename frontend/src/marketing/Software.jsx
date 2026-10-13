@@ -73,8 +73,12 @@ const COMPARE = [
 const FAQ = [
   ['What counts as a billable agent?', 'A billable agent is a person with the Agent or Administrator role who works on tickets. People who only log requests and follow their own tickets (requesters) are not counted as agents.'],
   ['Can my staff log tickets without paying?', 'Yes. Requester accounts can raise tickets and follow only their own tickets. They are not billed as agents. Requesters cannot see other people’s tickets or internal notes.'],
-  ['Can I try it first?', 'Request a demo and we will arrange one by email. A self-service trial is not available yet; we will announce trial terms once trial management has been built and tested.'],
-  ['How do I pay?', 'Online subscription billing is not live. During the launch period billing is arranged with you directly and invoiced. We never ask for payment details to arrange a demo, and this site does not collect card details.'],
+  ['Can I try it first?', SITE.onlineBilling && SITE.freeTrialMonths > 0
+    ? `Yes. A PayPal subscription starts with ${SITE.freeTrialMonths} free month${SITE.freeTrialMonths === 1 ? '' : 's'}. You are not charged until it ends, and you can cancel before then. You can also request a demo first.`
+    : 'Request a demo and we will arrange one by email. A self-service trial is not available yet; we will announce trial terms once trial management has been built and tested.'],
+  ['How do I pay?', SITE.onlineBilling
+    ? 'You can pay by monthly PayPal subscription, in US dollars, per agent (15% VAT is added for South African customers; international customers are billed without VAT added), or arrange to be invoiced directly in rand. We never ask for payment details to arrange a demo, and this site does not collect card details. See the cancellation and refund terms.'
+    : 'Online subscription billing is not live. During the launch period billing is arranged with you directly and invoiced. We never ask for payment details to arrange a demo, and this site does not collect card details.'],
   ['How long does onboarding take?', 'During launch each workspace is set up by hand after your demo. We do not promise a fixed turnaround; we will give you a date when we agree your set-up.'],
   ['Is my data kept separate from other customers?', 'Each customer’s workspace is set up separately with its own database, and the software checks permissions on the server for every request. This has been tested with an automated test suite. It has not been independently audited or certified.'],
   ['Where is my data stored, and is it backed up?', 'The software runs on Cloudflare’s network. A specific data-residency region has not been configured yet. Cloudflare’s database provides point-in-time recovery for the previous seven days; a documented export routine for customers is being put in place.'],
@@ -205,7 +209,7 @@ export default function Software() {
               </article>
             ))}
           </div>
-          <p className="mt-5 text-xs text-ink/60">Starter is available by request. Billing is arranged and invoiced directly during launch; online subscription billing is not live and no free-trial terms are offered yet.</p>
+          <p className="mt-5 text-xs text-ink/60">{SITE.onlineBilling ? 'Starter is available by request. Pay by monthly PayPal subscription (US dollars) or be invoiced directly in rand.' + (SITE.freeTrialMonths > 0 ? ` PayPal subscriptions start with ${SITE.freeTrialMonths} free month${SITE.freeTrialMonths === 1 ? '' : 's'}.` : '') : 'Starter is available by request. Billing is arranged and invoiced directly during launch; online subscription billing is not live and no free-trial terms are offered yet.'}</p>
         </div>
       </section>
 

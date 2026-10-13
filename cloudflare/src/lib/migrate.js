@@ -79,6 +79,55 @@ const MIGRATIONS = [
       await add('sla_policies', 'use_business_hours', 'INTEGER NOT NULL DEFAULT 0');
     },
   },
+
+  // v6: PayPal billing. Tables only (additive). A workspace can have several subscriptions over time (cancelling and
+  // re-subscribing is how the number of agents is changed); the newest row is the current one.
+  {
+    version: 6,
+    run: async (db) => {
+      await db.run(`CREATE TABLE IF NOT EXISTS subscriptions (
+        id TEXT PRIMARY KEY,
+        paypal_subscription_id TEXT UNIQUE NOT NULL,
+        paypal_plan_id TEXT,
+        status TEXT NOT NULL,              -- pending | active | past_due | suspended | cancelled | expired
+        seats INTEGER NOT NULL,            -- billable agents at the time of subscribing
+        currency TEXT,
+        next_billing_at TEXT,
+        last_payment_at TEXT,
+        last_payment_amount TEXT,
+        failed_payments INTEGER NOT NULL DEFAULT 0,
+        cancel_requested_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`);
+      // One row per webhook event PayPal has delivered. The primary key is what makes processing idempotent.
+      await db.run(`CREATE TABLE IF NOT EXISTS billing_events (
+        event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, paypal_subscription_id TEXT, received_at TEXT NOT NULL, outcome TEXT)`);
+      await db.run(`CREATE TABLE IF NOT EXISTS payments (
+        id TEXT PRIMARY KEY,               -- PayPal's sale id
+        paypal_subscription_id TEXT, amount TEXT, currency TEXT, paid_at TEXT, status TEXT, created_at TEXT NOT NULL)`);
+      await db.run('CREATE INDEX IF NOT EXISTS idx_payments_sub ON payments(paypal_subscription_id, paid_at)');
+    },
+  },
+
+  // v7: billing region (South Africa with VAT / international without), trial tracking, and what the access rules need:
+  // when a subscription lapsed, and how far it had been paid. Additive.
+  {
+    version: 7,
+    run: async (db) => {
+      const add = async (col, type) => {
+        const has = await db.get("SELECT COUNT(*) AS c FROM pragma_table_info('subscriptions') WHERE name = ?", col);
+        if (has.c) return;
+        try { await db.run(`ALTER TABLE subscriptions ADD COLUMN ${col} ${type}`); }
+        catch (err) { if (!/duplicate column/i.test(String(err && err.message))) throw err; }
+      };
+      await add('region', "TEXT NOT NULL DEFAULT 'ZA'");   // ZA = priced with 15% VAT; INTL = no VAT added
+      await add('in_trial', 'INTEGER NOT NULL DEFAULT 0');  // PayPal says the free trial is still running
+      await add('trial_ends_at', 'TEXT');
+      await add('paid_through', 'TEXT');                    // the end of the period PayPal has been paid for
+      await add('lapsed_at', 'TEXT');                       // when it stopped being in good standing; cleared when active again
+    },
+  },
 ];
 
 // D1 batches take one statement per entry, so strip SQL comments and split on ';'.

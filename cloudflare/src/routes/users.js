@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { seatLimit } from '../lib/entitlement.js';
 import { newId, nowIso, audit, body } from '../lib/helpers.js';
 import { hashPassword, authRequired, requireRole, sanitize } from '../lib/auth.js';
 import { validate, ENUM, MAX } from '../lib/validate.js';
@@ -13,6 +14,17 @@ r.get('/:id', requireRole('admin', 'agent'), async (c) => {
   return u ? c.json(sanitize(u)) : c.json({ error: 'Not found' }, 404);
 });
 
+// When subscription enforcement is on, the number of billable people (agents and administrators) cannot exceed what is paid for.
+async function seatError(db, env, becomesBillable) {
+  if (!becomesBillable) return null;
+  const limit = await seatLimit(db, env);
+  if (limit === null) return null;
+  const used = (await db.get("SELECT COUNT(*) AS c FROM users WHERE is_active = 1 AND role IN ('admin', 'agent')")).c;
+  return used + 1 > limit
+    ? `Your subscription covers ${limit} agent${limit === 1 ? '' : 's'}. To add more, cancel the subscription and subscribe again with the new number (Administration → Billing).`
+    : null;
+}
+
 r.post('/', requireRole('admin'), async (c) => {
   const db = c.get('db');
   const b = await body(c);
@@ -26,6 +38,8 @@ r.post('/', requireRole('admin'), async (c) => {
   const lower = String(email).toLowerCase();
   if (await db.get('SELECT id FROM users WHERE email = ?', lower)) return c.json({ error: 'Email already registered' }, 409);
   const id = newId();
+  const seatErr = await seatError(db, c.env, ['admin', 'agent'].includes(role || 'requester'));
+  if (seatErr) return c.json({ error: seatErr, code: 'seat_limit' }, 402);
   await db.run(
     `INSERT INTO users (id, name, email, password_hash, role, department, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     id, name, lower, await hashPassword(password), role || 'requester', department || null, nowIso()
@@ -62,6 +76,9 @@ r.put('/:id', requireRole('admin'), async (c) => {
     const admins = (await db.get("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND is_active = 1")).c;
     if (admins <= 1) return c.json({ error: 'At least one active administrator is required' }, 400);
   }
+  const wasBillable = user.is_active && ['admin', 'agent'].includes(user.role);
+  const seatErr = await seatError(db, c.env, !wasBillable && newActive && ['admin', 'agent'].includes(newRole));
+  if (seatErr) return c.json({ error: seatErr, code: 'seat_limit' }, 402);
   await db.run(
     'UPDATE users SET name = ?, role = ?, department = ?, is_active = ? WHERE id = ?',
     b.name ?? user.name, b.role ?? user.role, b.department ?? user.department,

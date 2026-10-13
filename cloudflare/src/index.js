@@ -17,6 +17,8 @@ import sla from './routes/sla.js';
 import dashboard from './routes/dashboard.js';
 import leads from './routes/leads.js';
 import settings from './routes/settings.js';
+import billing from './routes/billing.js';
+import { enforcementOn, workspaceAccess } from './lib/entitlement.js';
 import { runSlaChecks } from './lib/slacheck.js';
 
 // Only /api/* reaches this Worker (see "run_worker_first" in wrangler.jsonc).
@@ -44,6 +46,21 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
+// When the administrator has switched subscription enforcement on and a PayPal subscription has lapsed, the workspace is
+// read-only: people can still sign in, read, export and sort out billing, but cannot change tickets. Nothing is deleted.
+// Customers with no PayPal subscription (for example those invoiced directly) are never affected.
+app.use('/api/*', async (c, next) => {
+  const m = c.req.method;
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
+  const p = c.req.path;
+  if (p.startsWith('/api/auth/') || p.startsWith('/api/billing') || p === '/api/leads') return next();
+  const db = c.get('db');
+  if (!(await enforcementOn(db))) return next();
+  const a = await workspaceAccess(db, c.env);
+  if (a.writable) return next();
+  return c.json({ error: 'This workspace is read-only because its subscription is no longer in good standing. You can still sign in, read tickets and export them. An administrator can fix this under Administration → Billing.', code: 'subscription_lapsed', until: a.until }, 402);
+});
+
 app.get('/api/health', (c) => c.json({ status: 'ok', service: 'itsm-worker' }));
 
 // --- API documentation (Swagger UI loaded from a CDN; the spec is served from here) ---
@@ -67,6 +84,7 @@ app.route('/api/sla', sla);
 app.route('/api/dashboard', dashboard);
 app.route('/api/leads', leads);
 app.route('/api/settings', settings);
+app.route('/api/billing', billing);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((err, c) => {

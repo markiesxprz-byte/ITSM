@@ -6,7 +6,8 @@ import Modal from '../components/Modal';
 const ROLES = ['requester', 'agent', 'admin'];
 
 export default function Admin() {
-  const [tab, setTab] = useState('users');
+  // Coming back from PayPal lands on /admin?billing=return (or =cancelled): open the Billing tab.
+  const [tab, setTab] = useState(new URLSearchParams(window.location.search).get('billing') ? 'billing' : 'users');
 
   return (
     <div>
@@ -29,6 +30,7 @@ export default function Admin() {
         <button onClick={() => setTab('users')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'users' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Users</button>
         <button onClick={() => setTab('sla')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'sla' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>SLA Policies</button>
         <button onClick={() => setTab('catalog')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'catalog' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Service Catalog</button>
+        <button onClick={() => setTab('billing')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'billing' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Billing</button>
         <button onClick={() => setTab('leads')} className={`whitespace-nowrap rounded px-4 py-1.5 font-medium ${tab === 'leads' ? 'bg-white shadow-sm' : 'text-ink/50'}`}>Demo &amp; waitlist</button>
       </div>
 
@@ -36,6 +38,7 @@ export default function Admin() {
       {tab === 'sla' && <SlaPanel />}
       {tab === 'catalog' && <CatalogPanel />}
       {tab === 'leads' && <LeadsPanel />}
+      {tab === 'billing' && <BillingPanel />}
     </div>
   );
 }
@@ -763,6 +766,150 @@ function LeadsPanel() {
                 </tbody>
               </table>
             </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+const STATUS_WORDS = {
+  none: ['No subscription', 'bg-stone-200 text-ink/70'],
+  pending: ['Waiting for PayPal to confirm', 'bg-amber-50 text-amber-600'],
+  active: ['Active', 'bg-patina-500 text-white'],
+  past_due: ['Payment failed — PayPal will retry', 'bg-brick-50 text-brick-600'],
+  suspended: ['Suspended by PayPal', 'bg-brick-50 text-brick-600'],
+  cancelled: ['Cancelled', 'bg-stone-200 text-ink/70'],
+  expired: ['Expired', 'bg-stone-200 text-ink/70'],
+};
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : '—');
+
+// What PayPal has confirmed about this workspace's subscription. The browser never decides whether it is paid.
+function BillingPanel() {
+  const [info, setInfo] = useState(null);
+  const [msg, setMsg] = useState({ kind: '', text: '' });
+  const [busy, setBusy] = useState(false);
+  const [region, setRegion] = useState('ZA');
+  const load = useCallback(() => client.get('/billing').then((res) => setInfo(res.data)), []);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('billing');
+    (async () => {
+      if (q === 'return') {
+        try { await client.post('/billing/sync'); setMsg({ kind: 'ok', text: 'Welcome back. We asked PayPal to confirm your subscription; its status is shown below.' }); }
+        catch (e) { setMsg({ kind: 'err', text: e.response?.data?.error || 'We could not confirm with PayPal just now.' }); }
+      } else if (q === 'cancelled') {
+        setMsg({ kind: 'ok', text: 'You left PayPal without subscribing. Nothing was charged.' });
+      }
+      if (q) window.history.replaceState({}, '', '/admin');
+      load();
+    })();
+  }, [load]);
+
+  if (!info) return null;
+  const sub = info.subscription;
+  const status = sub ? sub.status : 'none';
+  const [word0, tone] = STATUS_WORDS[status] || STATUS_WORDS.none;
+  const word = sub && sub.in_trial && status === 'active' ? 'Free trial' : word0;
+  const live = ['pending', 'active', 'past_due', 'suspended'].includes(status);
+  const mismatch = sub && status === 'active' && info.seats_in_use !== sub.seats;
+
+  async function subscribe() {
+    const vat = region === 'ZA' ? 'plus 15% South African VAT' : 'with no VAT added (you are responsible for any taxes in your own country)';
+    if (!window.confirm(`You will be billed monthly for ${Math.max(1, info.seats_in_use)} agent(s), in US dollars, ${vat}, through PayPal. Continue to PayPal?`)) return;
+    setBusy(true); setMsg({ kind: '', text: '' });
+    try { const res = await client.post('/billing/subscribe', { region }); window.location.href = res.data.approve_url; }
+    catch (e) { setMsg({ kind: 'err', text: e.response?.data?.error || 'Could not start the subscription.' }); setBusy(false); }
+  }
+  async function setEnforcement(enabled) {
+    if (enabled && !window.confirm('Switch subscription enforcement ON? If the subscription lapses, this workspace becomes read-only (nothing is deleted), and the number of agents cannot exceed what you pay for.')) return;
+    setBusy(true); setMsg({ kind: '', text: '' });
+    try { await client.put('/billing/enforcement', { enabled }); setMsg({ kind: 'ok', text: enabled ? 'Enforcement is on.' : 'Enforcement is off.' }); await load(); }
+    catch (e) { setMsg({ kind: 'err', text: e.response?.data?.error || 'Could not change enforcement.' }); }
+    setBusy(false);
+  }
+  async function cancel() {
+    if (!window.confirm('Cancel this subscription? Future charges stop. To change the number of agents, cancel and subscribe again.')) return;
+    setBusy(true); setMsg({ kind: '', text: '' });
+    try { await client.post('/billing/cancel'); setMsg({ kind: 'ok', text: 'The subscription has been cancelled with PayPal.' }); await load(); }
+    catch (e) { setMsg({ kind: 'err', text: e.response?.data?.error || 'Could not cancel.' }); }
+    setBusy(false);
+  }
+
+  return (
+    <div>
+      {info.mode !== 'live' && info.configured && (
+        <div role="note" className="mb-4 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-600">Test mode: this is connected to PayPal's {info.mode === 'sandbox' ? 'sandbox' : 'test system'}. No real money moves.</div>
+      )}
+      {msg.text && <div role={msg.kind === 'err' ? 'alert' : 'status'} className={`mb-4 rounded-md px-4 py-3 text-sm ${msg.kind === 'err' ? 'bg-brick-50 text-brick-600' : 'bg-patina-100 text-patina-700'}`}>{msg.text}</div>}
+
+      {!info.configured ? (
+        <Card className="p-5">
+          <h3 className="font-display text-lg font-semibold text-ink">Billing</h3>
+          <p className="mt-1 text-sm text-ink/70">Online billing is not set up for this workspace. Billing is arranged and invoiced directly with Infovantage Consulting.</p>
+          <p className="mt-2 text-sm text-ink/60">Agents and administrators in use: <strong>{info.seats_in_use}</strong>. Requesters are not billed.</p>
+        </Card>
+      ) : (
+        <>
+          <Card className="mb-6 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-display text-lg font-semibold text-ink">Subscription</h3>
+              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${tone}`}>{word}</span>
+            </div>
+            <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-4">
+              <div><dt className="text-ink/50">Agents paid for</dt><dd className="font-medium text-ink">{sub ? sub.seats : '—'}</dd></div>
+              <div><dt className="text-ink/50">Agents in use now</dt><dd className="font-medium text-ink">{info.seats_in_use}</dd></div>
+              <div><dt className="text-ink/50">{sub && sub.in_trial ? 'First charge' : 'Next charge'}</dt><dd className="font-medium text-ink">{status === 'active' || status === 'past_due' ? fmtDate(sub.next_billing_at) : '—'}</dd></div>
+              <div><dt className="text-ink/50">Last payment</dt><dd className="font-medium text-ink">{sub && sub.last_payment_amount ? `US$${sub.last_payment_amount} on ${fmtDate(sub.last_payment_at)}` : '—'}</dd></div>
+            </dl>
+            {sub && sub.in_trial && <p role="note" className="mt-4 rounded-md bg-patina-100 px-3 py-2 text-sm text-patina-700">You are in your free trial until {fmtDate(sub.trial_ends_at)}. You are not charged before then. Cancel before that date if you do not want to continue.</p>}
+            {status === 'cancelled' && sub.paid_through && new Date(sub.paid_through) > new Date() && <p role="note" className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-600">Cancelled. You can keep using the service until {fmtDate(sub.paid_through)}, the end of what you have paid for.</p>}
+            {mismatch && <p role="note" className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-600">You have {info.seats_in_use} agents but pay for {sub.seats}. To change the number of agents, cancel this subscription and subscribe again.</p>}
+            {status === 'past_due' && <p role="alert" className="mt-4 rounded-md bg-brick-50 px-3 py-2 text-sm text-brick-600">The last payment failed. PayPal will try again; check your PayPal account.</p>}
+            {!live && info.regions.length > 1 && (
+              <fieldset className="mt-4">
+                <legend className="mb-1 text-sm font-medium text-ink">Where is your business based?</legend>
+                <label className="mr-5 inline-flex items-center gap-2 text-sm text-ink/80"><input type="radio" name="region" checked={region === 'ZA'} onChange={() => setRegion('ZA')} /> South Africa (15% VAT added)</label>
+                <label className="inline-flex items-center gap-2 text-sm text-ink/80"><input type="radio" name="region" checked={region === 'INTL'} onChange={() => setRegion('INTL')} /> Outside South Africa (no VAT added)</label>
+              </fieldset>
+            )}
+            <p className="mt-4 text-xs text-ink/50">Billed monthly per agent or administrator, in US dollars. South African customers pay 15% VAT on top; international customers are billed without VAT added and are responsible for any taxes in their own country. Requesters are free. See the <a className="underline" href="/terms#billing">cancellation and refund terms</a>.</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {!live && <Button onClick={subscribe} disabled={busy}>{busy ? 'Please wait…' : 'Subscribe with PayPal'}</Button>}
+              {live && <Button variant="secondary" onClick={cancel} disabled={busy}>Cancel subscription</Button>}
+              {status === 'pending' && <Button variant="secondary" onClick={() => client.post('/billing/sync').then(load).catch((e) => setMsg({ kind: 'err', text: e.response?.data?.error || 'Could not check with PayPal.' }))}>Check with PayPal</Button>}
+            </div>
+          </Card>
+
+          <Card className="mb-6 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="max-w-xl">
+                <h3 className="font-display text-lg font-semibold text-ink">Subscription enforcement</h3>
+                <p className="mt-1 text-sm text-ink/70">
+                  {info.access.enforce
+                    ? 'On. If the subscription lapses this workspace becomes read-only (people can still sign in, read and export), and the number of agents cannot exceed what you pay for. Nothing is ever deleted.'
+                    : 'Off. Nothing is restricted, whatever the subscription status. Switch it on once you are happy that billing works.'}
+                </p>
+                {info.access.enforce && !info.access.writable && <p role="alert" className="mt-2 text-sm font-medium text-brick-600">This workspace is read-only right now.</p>}
+              </div>
+              <Button variant="secondary" onClick={() => setEnforcement(!info.access.enforce)} disabled={busy}>{info.access.enforce ? 'Switch off' : 'Switch on'}</Button>
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <div className="border-b border-stone-200 px-4 py-3 font-display font-semibold text-ink">Payment history</div>
+            {info.payments.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-ink/50">No payments yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[420px] text-sm">
+                  <thead><tr className="border-b border-stone-200 bg-stone-50 text-left text-xs uppercase tracking-wide text-ink/40"><th scope="col" className="px-4 py-3">Date</th><th scope="col" className="px-4 py-3">Amount</th><th scope="col" className="px-4 py-3">PayPal reference</th></tr></thead>
+                  <tbody>{info.payments.map((p) => (
+                    <tr key={p.id} className="border-b border-stone-100 last:border-0"><td className="px-4 py-3">{fmtDate(p.paid_at)}</td><td className="px-4 py-3">{p.currency === 'USD' ? 'US$' : `${p.currency || ''} `}{p.amount}</td><td className="px-4 py-3 font-mono text-xs text-ink/60">{p.id}</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
           </Card>
         </>
       )}

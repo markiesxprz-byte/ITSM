@@ -868,6 +868,72 @@ paths:
       responses:
         '200': { description: Updated article, content: { application/json: { schema: { $ref: '#/components/schemas/KbArticle' } } } }
 
+  /billing:
+    get:
+      tags: [Billing]
+      summary: Subscription status, seats and payment history (admin only)
+      responses:
+        '200': { description: 'configured, mode (sandbox|live|test), currency USD, seats_in_use, the current subscription and recent payments. Never contains a credential.' }
+        '403': { description: Administrators only }
+  /billing/subscribe:
+    post:
+      tags: [Billing]
+      summary: Start a PayPal subscription (admin only)
+      description: The number of agents and the price are decided by the server. The only choice is region - ZA (South Africa, 15% VAT added; the default) or INTL (no VAT added; only if an international plan is configured). The subscription stays "pending" until PayPal confirms it.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { region: { type: string, enum: [ZA, INTL] } } }
+      responses:
+        '200': { description: 'approve_url - send the customer there to approve the subscription in PayPal' }
+        '400': { description: Unknown region, or international billing is not available }
+        '409': { description: A subscription already exists. To change seats, cancel it and subscribe again. }
+        '502': { description: PayPal could not be reached; nothing was charged }
+        '503': { description: Online billing is not set up }
+  /billing/access:
+    get:
+      tags: [Billing]
+      summary: Is this workspace read-only? (any signed-in user)
+      responses:
+        '200': { description: 'enforce, entitled, writable, status, reason and until. Reveals nothing about payments.' }
+        '401': { description: Not signed in }
+  /billing/enforcement:
+    put:
+      tags: [Billing]
+      summary: Switch subscription enforcement on or off (admin only; off by default)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
+      responses:
+        '200': { description: The access state after the change }
+        '400': { description: enabled must be true or false }
+        '503': { description: Online billing is not set up }
+  /billing/sync:
+    post:
+      tags: [Billing]
+      summary: Ask PayPal for the subscription's current state (admin only)
+      responses:
+        '200': { description: The subscription as confirmed by PayPal }
+        '404': { description: No subscription }
+  /billing/cancel:
+    post:
+      tags: [Billing]
+      summary: Cancel the current subscription with PayPal (admin only)
+      responses:
+        '200': { description: Cancelled, as confirmed by PayPal }
+        '409': { description: Nothing active to cancel }
+  /billing/webhook:
+    post:
+      tags: [Billing]
+      summary: PayPal webhook receiver (called by PayPal, not by people)
+      description: Every call is verified with PayPal before it is acted on. Duplicate events are acknowledged and ignored.
+      responses:
+        '200': { description: Received }
+        '400': { description: Signature not verified, or not a PayPal event }
+        '413': { description: Too large }
+        '503': { description: Billing not configured }
   /sla:
     get:
       tags: [SLA Policies]

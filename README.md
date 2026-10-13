@@ -102,6 +102,43 @@ The public pages are `/` (home), `/software` (the SaaS landing page: capabilitie
 
 Tests: `node cloudflare/scripts/sla.test.mjs` (36 time-maths checks), `bash cloudflare/scripts/sla-check.sh` (77 API and scheduled-job checks), `python3 cloudflare/scripts/sla-browser.py` (37 screen checks).
 
+## PayPal billing (built and tested against a MOCK of PayPal; not yet run against PayPal itself)
+
+**What it does.** Administration → Billing lets a workspace administrator start a monthly PayPal subscription, billed **per billable agent** (agents and administrators; requesters are free), in **US dollars**. South African customers pay **15% VAT on top**; international customers choose "outside South Africa" and are billed with **no VAT added** (they are responsible for taxes in their own country). The server decides the number of agents and the plan; the browser cannot. A subscription stays **pending until PayPal itself confirms it**; a success page alone never activates anything. Webhooks are verified with PayPal and processed once per event. Payments appear in a history. Changing the number of agents means **cancelling and subscribing again**. No card or PayPal login details are ever stored or seen.
+
+**Free trial.** `paypal-setup.mjs --trial-months 1` makes the plan start with a free month. PayPal runs the trial and starts charging by itself; the app shows "Free trial" with the end date, and the first payment ends the trial. Nothing about a trial or online billing appears on the public site until you set `onlineBilling` and `freeTrialMonths` in `frontend/src/siteConfig.js`.
+
+**Subscription enforcement (OFF by default).** An administrator can switch it on in Billing. Then: (a) the number of agents and administrators cannot exceed what is paid for (adding, promoting or re-activating one gets a clear "cancel and subscribe again" message); (b) if the subscription lapses, the workspace becomes **read-only** after a grace period (7 days, or `BILLING_GRACE_DAYS`): people can still sign in, read, export to CSV and fix billing, and a banner explains why. Nothing is deleted. A cancelled subscription keeps working until the end of what was paid for. Starting a new subscription and not paying does not restore access. **Customers with no PayPal subscription (for example those invoiced directly) are never restricted.**
+
+**Configuration (Cloudflare secrets for the `itsm` Worker; never in GitHub)**
+| Name | Purpose |
+|---|---|
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | The PayPal REST app's credentials |
+| `PAYPAL_PLAN_ID` | The South Africa plan (VAT added) |
+| `PAYPAL_PLAN_ID_INTL` | Optional: the international plan (no VAT). Without it only South Africa is offered |
+| `PAYPAL_WEBHOOK_ID` | The id of the webhook you create in PayPal's dashboard |
+| `PAYPAL_ENV` | Leave **unset** for the sandbox (the safe default). Set to `live` only when you have approved real charges |
+| `BILLING_GRACE_DAYS` | Optional: days of grace before a lapsed workspace goes read-only (default 7) |
+
+If any of the first four (client id, secret, `PAYPAL_PLAN_ID`, webhook id) is missing, billing is off: the screen says so and nothing can be charged.
+
+**Set-up, in order**
+1. PayPal developer dashboard → create a **sandbox** REST app (client id and secret) and a sandbox *business* and a sandbox *buyer* account.
+2. Create the plans on your computer: `PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... node cloudflare/scripts/paypal-setup.mjs --price 12.00` (South Africa; add `--trial-months 1` for a free first month), and again with `--region intl` for the international plan. Each prints the plan id to store. See `docs/PRICING_RECOMMENDATION.md`.
+3. PayPal dashboard → Webhooks → add `https://<your-site>/api/billing/webhook` for: `BILLING.SUBSCRIPTION.ACTIVATED`, `.CANCELLED`, `.SUSPENDED`, `.EXPIRED`, `.PAYMENT.FAILED` and `PAYMENT.SALE.COMPLETED`. Note the webhook id.
+4. Store the secrets in Cloudflare.
+5. **Run the sandbox check:** `PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... node cloudflare/scripts/paypal-sandbox-check.mjs --plan-id P-... --plan-id-intl P-... --webhook-id <id>`. It checks your plans (active, per-agent, US dollars, monthly, VAT or none, trial), creates a test subscription, confirms your webhook is registered with all six events, and confirms PayPal rejects a forged webhook. It stops at "READY FOR THE BUYER STEPS".
+6. **Buyer steps, by hand** (the script cannot approve as a buyer): subscribe with the sandbox buyer; confirm the status stays "Waiting for PayPal" until PayPal confirms, then becomes Active (or Free trial); confirm a payment appears in the history and a repeated webhook does not duplicate it; cancel; subscribe again with a different number of agents and check the quantity and the VAT line on PayPal's side; simulate a failed payment; try the international option.
+7. Only then, with your explicit approval: repeat steps 1-4 on PayPal's **live** system (`--live`), switch the secrets to the live values and set `PAYPAL_ENV=live`. Switch on enforcement only after that, and set `onlineBilling` (and `freeTrialMonths`) on the public site.
+
+**Limits (read these)**
+- The PayPal API calls were written from PayPal's documentation and exercised only against a local mock. Steps 5 and 6 are what prove them.
+- No proration or automatic mid-term seat changes (re-subscribe instead). Refunds are made in PayPal, not in this app.
+- The region (VAT or not) is the customer's own answer; the app cannot check it. Confirm the VAT treatment with your accountant (`docs/LEGAL_REVIEW_BRIEF.md`).
+- Customers invoiced directly (in rand) are unaffected: leave billing unconfigured for them.
+
+Tests: `CHROMIUM=<path> bash cloudflare/scripts/billing-check.sh` (115 API checks and 41 screen checks against the mock) and `node cloudflare/scripts/entitlement.test.mjs` (18 access-rule checks).
+
 ## API documentation
 `/api/docs` serves interactive Swagger UI (loaded from a public CDN) for every endpoint; the raw spec is at `/api/openapi.yaml`.
 
